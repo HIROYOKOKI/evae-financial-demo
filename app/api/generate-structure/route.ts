@@ -1,324 +1,348 @@
+// app/api/generate-structure/route.ts
 import { NextResponse } from "next/server";
 
-type Input = {
+export const runtime = "nodejs";
+
+type InputPayload = {
+  bank?: string;
   age?: number;
   job?: string;
-  incomeMan?: number;       // 年収（万円）
+  incomeMan?: number; // 年収(万円)
   family?: string;
-  assetsMan?: number;       // 自己資金（万円）
-  otherDebtMan?: number;    // 他の借入（万円）
-  loanRequestMan?: number;  // 申込金額（万円）
+  assetsMan?: number; // 自己資金(万円)
+  otherDebtMan?: number; // 他借入(万円)
+  loanRequestMan?: number; // 申込金額(万円)
 };
 
-function toBullets(text: string): string[] {
-  const lines = text
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  const bullets = lines
-    .map((l) => l.replace(/^[-*•・]\s*/, "").trim())
-    .filter((l) => l.length >= 4);
-
-  return bullets.slice(0, 4);
-}
-
-// ---- ここから：架空銀行A（Demo）ポリシー（数値固定） ----
-const BANK_POLICY = {
-  name: "仮想銀行A（Demo）",
-  mortgage: {
-    annualRate: 0.015, // 1.5%（固定・デモ）
-    years: 35,         // 35年（固定・デモ）
-  },
-  thresholds: {
-    dtiMaxPct: 35,      // 返済負担率上限（DTI）
-    downPaymentMinPct: 10, // 自己資金比率（頭金比率）最低
-    ltiMax: 7,          // 申込金額 / 年収 上限（簡易）
-    otherDebtMaxIncomeRatio: 0.5, // 他借入 / 年収 上限（簡易）
-  },
-  otherDebt: {
-    // 他借入の月返済額（簡易換算）：残高×3%÷12（デモ）
-    annualPaymentRatio: 0.03,
-  },
+type BankPolicy = {
+  bank: string;
+  ruleId: string;
+  dtiMaxPct: number;
+  downPaymentMinPct: number;
+  annualRatePct: number;
+  years: number;
+  // LTI上限（デモ用に追加。不要なら削ってもOK）
+  ltiMax: number;
+  // 他借入の月返済推定係数（借入残高×係数＝月返済(万円)）
+  otherDebtPayCoeff: number;
 };
 
-function monthlyPaymentMan(principalMan: number, annualRate: number, years: number) {
-  // 元利均等返済の概算（月返済額、単位：万円/月）
-  // principalMan: 万円
-  const r = annualRate / 12;
-  const n = years * 12;
-
-  if (principalMan <= 0) return 0;
-  if (r <= 0) return principalMan / n;
-
-  const pow = Math.pow(1 + r, n);
-  return principalMan * (r * pow) / (pow - 1);
-}
-
-function principalFromMonthlyPaymentMan(paymentMan: number, annualRate: number, years: number) {
-  // 月返済額→元本の逆算（概算、単位：万円）
-  const r = annualRate / 12;
-  const n = years * 12;
-
-  if (paymentMan <= 0) return 0;
-  if (r <= 0) return paymentMan * n;
-
-  const pow = Math.pow(1 + r, n);
-  return paymentMan * (pow - 1) / (r * pow);
-}
-
-function roundUpMan(x: number, stepMan = 10) {
-  // 万円単位で切り上げ（デモなので分かりやすく）
-  if (!isFinite(x)) return 0;
-  return Math.max(0, Math.ceil(x / stepMan) * stepMan);
-}
-
-function pct(x: number) {
-  if (!isFinite(x)) return 0;
-  return Math.round(x * 10) / 10; // 小数1桁
-}
-
-function policyGate(input: Required<Pick<Input, "incomeMan" | "loanRequestMan" | "otherDebtMan" | "assetsMan">>) {
-  // Λ：LLMに判定させず、銀行ポリシー（ルール）で確定する
-  const { incomeMan, loanRequestMan, otherDebtMan, assetsMan } = input;
-
-  const monthlyIncomeMan = incomeMan / 12;
-
-  // 住宅ローン元本は「申込金額 - 自己資金」の想定（デモ）
-  const principalMan = Math.max(0, loanRequestMan - assetsMan);
-
-  const estMortgagePayMan = monthlyPaymentMan(
-    principalMan,
-    BANK_POLICY.mortgage.annualRate,
-    BANK_POLICY.mortgage.years
-  );
-
-  const estOtherDebtPayMan = otherDebtMan * (BANK_POLICY.otherDebt.annualPaymentRatio / 12);
-
-  const dtiPct = monthlyIncomeMan > 0
-    ? ((estMortgagePayMan + estOtherDebtPayMan) / monthlyIncomeMan) * 100
-    : 0;
-
-  const downPaymentPct = loanRequestMan > 0 ? (assetsMan / loanRequestMan) * 100 : 0;
-  const lti = incomeMan > 0 ? (loanRequestMan / incomeMan) : 0;
-  const otherDebtIncomeRatio = incomeMan > 0 ? (otherDebtMan / incomeMan) : 0;
-
-  const flags: string[] = [];
-
-  if (dtiPct > BANK_POLICY.thresholds.dtiMaxPct) {
-    flags.push(`返済負担率（DTI）が上限 ${BANK_POLICY.thresholds.dtiMaxPct}% を超過（推定 ${pct(dtiPct)}%）`);
-  }
-  if (downPaymentPct < BANK_POLICY.thresholds.downPaymentMinPct) {
-    flags.push(`自己資金比率が最低 ${BANK_POLICY.thresholds.downPaymentMinPct}% 未満（推定 ${pct(downPaymentPct)}%）`);
-  }
-  if (lti > BANK_POLICY.thresholds.ltiMax) {
-    flags.push(`申込金額/年収（LTI）が上限 ${BANK_POLICY.thresholds.ltiMax}倍 を超過（推定 ${pct(lti)}倍）`);
-  }
-  if (otherDebtIncomeRatio > BANK_POLICY.thresholds.otherDebtMaxIncomeRatio) {
-    flags.push(`他借入/年収が上限 ${BANK_POLICY.thresholds.otherDebtMaxIncomeRatio}倍 を超過（推定 ${pct(otherDebtIncomeRatio)}倍）`);
-  }
-
-  const result = flags.length > 0 ? "HOLD" : "PASS";
-
-  // ---- 改善量（あといくら）を計算 ----
-  // 1) DTI改善：上限に収めるために必要な「月返済削減」→「元本削減」→「申込金額削減」
-  const maxTotalPayMan = monthlyIncomeMan * (BANK_POLICY.thresholds.dtiMaxPct / 100);
-  const currentTotalPayMan = estMortgagePayMan + estOtherDebtPayMan;
-
-  const needReducePayMan = Math.max(0, currentTotalPayMan - maxTotalPayMan);
-  const needReducePrincipalMan = needReducePayMan > 0
-    ? principalFromMonthlyPaymentMan(needReducePayMan, BANK_POLICY.mortgage.annualRate, BANK_POLICY.mortgage.years)
-    : 0;
-
-  // 申込金額を下げる場合は「元本削減 ≒ 申込金額削減」として提示（デモ）
-  const reduceLoanManForDTI = roundUpMan(needReducePrincipalMan, 10);
-
-  // 2) 頭金比率改善：最低比率にするための必要自己資金
-  const requiredAssetsMan = loanRequestMan * (BANK_POLICY.thresholds.downPaymentMinPct / 100);
-  const increaseAssetsMan = roundUpMan(requiredAssetsMan - assetsMan, 10);
-
-  // 3) 他借入比率改善：上限まで圧縮する目安
-  const maxOtherDebtMan = incomeMan * BANK_POLICY.thresholds.otherDebtMaxIncomeRatio;
-  const reduceOtherDebtMan = roundUpMan(otherDebtMan - maxOtherDebtMan, 10);
-
-  const reason =
-    result === "HOLD"
-      ? "架空銀行AのPolicy Gate条件により、追加の再検討が必要（可否は決定しない）"
-      : "架空銀行AのPolicy Gate上は条件を満たす範囲（ただし可否の決定はしない）";
-
-  // Ǝでそのまま表示できる「具体アクション」を作る
-  const actions: string[] = [];
-
-  if (result === "HOLD") {
-    if (reduceLoanManForDTI > 0) actions.push(`申込金額を約 ${reduceLoanManForDTI} 万円下げる（DTI目標 ${BANK_POLICY.thresholds.dtiMaxPct}%）`);
-    if (increaseAssetsMan > 0) actions.push(`自己資金を約 ${increaseAssetsMan} 万円増やす（頭金 ${BANK_POLICY.thresholds.downPaymentMinPct}% 目標）`);
-    if (reduceOtherDebtMan > 0) actions.push(`他の借入を約 ${reduceOtherDebtMan} 万円圧縮する（比率上限 ${BANK_POLICY.thresholds.otherDebtMaxIncomeRatio}倍）`);
-    if (actions.length === 0) actions.push("条件の前提（年収・借入・自己資金）を再確認する");
-  } else {
-    actions.push("条件の前提（年収・借入・自己資金）を再確認する");
-    actions.push("支出変動（家計）を想定して余裕を確認する");
-    actions.push("金利変動ケースも検討する");
-  }
-
-  return {
-    method: "Policy Gate",
+const BANK_POLICIES: Record<string, BankPolicy> = {
+  "架空銀行A": {
+    bank: "架空銀行A（Demo）",
     ruleId: "MORTGAGE_STD_001",
-    result,
-    flags,
-    reason,
-    actions,
-    policy: {
-      bank: BANK_POLICY.name,
-      dtiMaxPct: BANK_POLICY.thresholds.dtiMaxPct,
-      downPaymentMinPct: BANK_POLICY.thresholds.downPaymentMinPct,
-      annualRatePct: BANK_POLICY.mortgage.annualRate * 100,
-      years: BANK_POLICY.mortgage.years,
-    },
-    metrics: {
-      monthlyIncomeMan: pct(monthlyIncomeMan),
-      principalMan: pct(principalMan),
-      estMortgagePayMan: pct(estMortgagePayMan),
-      estOtherDebtPayMan: pct(estOtherDebtPayMan),
-      dtiPct: pct(dtiPct),
-      downPaymentPct: pct(downPaymentPct),
-      lti: pct(lti),
-    },
-    required: {
-      reduceLoanManForDTI: reduceLoanManForDTI,     // DTI改善のための目安（万円）
-      increaseAssetsManForDownPayment: increaseAssetsMan, // 頭金改善のための目安（万円）
-      reduceOtherDebtMan: reduceOtherDebtMan,       // 他借入比率改善の目安（万円）
-    },
-  };
+    dtiMaxPct: 35,
+    downPaymentMinPct: 10,
+    annualRatePct: 1.5,
+    years: 35,
+    ltiMax: 8.0,
+    otherDebtPayCoeff: 0.001, // 例: 100万円の借入 → 0.1万円/月
+  },
+  "架空銀行B": {
+    bank: "架空銀行B（保守）",
+    ruleId: "MORTGAGE_CONS_001",
+    dtiMaxPct: 30,
+    downPaymentMinPct: 15,
+    annualRatePct: 1.8,
+    years: 35,
+    ltiMax: 7.0,
+    otherDebtPayCoeff: 0.0012,
+  },
+  "架空銀行C": {
+    bank: "架空銀行C（積極）",
+    ruleId: "MORTGAGE_GROW_001",
+    dtiMaxPct: 40,
+    downPaymentMinPct: 5,
+    annualRatePct: 1.2,
+    years: 40,
+    ltiMax: 9.0,
+    otherDebtPayCoeff: 0.0009,
+  },
+};
+
+function clampNum(v: any, fallback: number) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-async function generateVisionWithLLM(input: Input) {
+/** PMT: 毎月返済額（万円） */
+function pmtMan(principalMan: number, annualRatePct: number, years: number) {
+  const P = principalMan; // 万円
+  const r = (annualRatePct / 100) / 12;
+  const n = years * 12;
+
+  if (P <= 0) return 0;
+  if (r === 0) return P / n;
+
+  const denom = 1 - Math.pow(1 + r, -n);
+  return (P * r) / denom;
+}
+
+/** PV: 返済額上限から逆算できる最大元本（万円） */
+function pvFromPmtMan(pmtMonthlyMan: number, annualRatePct: number, years: number) {
+  const r = (annualRatePct / 100) / 12;
+  const n = years * 12;
+
+  if (pmtMonthlyMan <= 0) return 0;
+  if (r === 0) return pmtMonthlyMan * n;
+
+  const factor = (1 - Math.pow(1 + r, -n)) / r;
+  return pmtMonthlyMan * factor;
+}
+
+/** 頭金最低 p% を満たすために必要な追加自己資金（万円） */
+function requiredExtraAssetsForDownPayment(assetsMan: number, loanMan: number, minPct: number) {
+  const p = minPct / 100;
+  if (p <= 0) return 0;
+
+  // (assets+x)/(assets+x+loan) >= p
+  // assets+x >= p*(assets+x+loan)
+  // (1-p)*(assets+x) >= p*loan
+  // assets+x >= (p*loan)/(1-p)
+  const targetAssets = (p * loanMan) / (1 - p);
+  return Math.max(0, targetAssets - assetsMan);
+}
+
+/** LLMでV（論点）を生成（キーがない場合はフォールバック） */
+async function generateVisionPoints(input: {
+  incomeMan: number;
+  assetsMan: number;
+  otherDebtMan: number;
+  loanRequestMan: number;
+  family?: string;
+  job?: string;
+}) {
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-  const fallback = {
-    bullets: [
-      "返済負担率に関する論点（無理のない範囲か）",
-      "他の借入による影響（返済余力への圧迫）",
-      "自己資金比率の評価（安全余裕・下振れ耐性）",
-      "家族構成による将来支出見込み（教育費・生活変動）",
-    ],
-    raw: "",
-    usedModel: model,
-    note: "",
-  };
+  const fallback = [
+    "申込金額に対する年収の割合に関する論点",
+    "家族構成が返済能力に与える影響",
+    "自己資金の割合が融資条件に与える影響",
+    "他の借入がないことのメリットとリスクに関する論点",
+  ];
 
-  if (!apiKey) return { ...fallback, note: "OPENAI_API_KEY 未設定のため固定文を返却" };
+  if (!apiKey) return { points: fallback, meta: { model: "fallback", visionNote: "LLM未接続（フォールバック）" } };
 
-  const system = `
-あなたは金融AIの「判断構造デモ」における V – Vision を生成します。
+  const prompt = `
+あなたは金融の与信設計に詳しいアシスタントです。
+ただし「可否判断」や「数値の断定」は禁止です。
+入力条件から、検討すべき論点（箇条書き4〜6点）だけを日本語で生成してください。
 
-重要ルール:
-- 可否（承認/否決）や、HOLD/PASS の判断は絶対にしない（それはΛでルールが行う）
-- 数値の断定（例: 返済比率が何%）はしない（数値はΛのルール計算で表示する）
-- 出力は「論点」だけを箇条書き4つ（日本語、各1行）
-- 断定口調を避け、「〜に関する論点」「〜の影響」などに留める
-`.trim();
-
-  const user = `
-入力（E – Origin）:
-- 年齢: ${input.age ?? "未入力"}
-- 職業: ${input.job ?? "未入力"}
-- 年収(万円): ${input.incomeMan ?? "未入力"}
+入力：
+- 年収(万円): ${input.incomeMan}
+- 自己資金(万円): ${input.assetsMan}
+- 他借入(万円): ${input.otherDebtMan}
+- 申込金額(万円): ${input.loanRequestMan}
 - 家族構成: ${input.family ?? "未入力"}
-- 自己資金(万円): ${input.assetsMan ?? "未入力"}
-- 他の借入(万円): ${input.otherDebtMan ?? "未入力"}
-- 申込金額(万円): ${input.loanRequestMan ?? "未入力"}
+- 職業: ${input.job ?? "未入力"}
 
-この入力に対して、判断前に検討すべき「論点」を4つ、箇条書きで出してください。
+出力形式：
+- 箇条書き（文章は短め）
+- 可否の示唆は禁止
+- 数値の断定は禁止（例「DTIは◯%」などは禁止）
 `.trim();
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      temperature: 0.2,
-      max_tokens: 220,
-    }),
-  });
+  try {
+    // Chat Completions互換（fetchで軽く）
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.4,
+        messages: [
+          { role: "system", content: "You are a careful assistant. Do not make approval/denial decisions." },
+          { role: "user", content: prompt },
+        ],
+      }),
+    });
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    return { ...fallback, raw: errText, note: `OpenAI API error: ${res.status}` };
+    if (!r.ok) throw new Error(`openai ${r.status}`);
+
+    const j = await r.json();
+    const text: string = j?.choices?.[0]?.message?.content ?? "";
+    const lines = text
+      .split("\n")
+      .map((s: string) => s.replace(/^[-•\s]+/, "").trim())
+      .filter(Boolean)
+      .slice(0, 8);
+
+    return {
+      points: lines.length ? lines : fallback,
+      meta: { model, visionNote: "LLMで生成" },
+    };
+  } catch {
+    return { points: fallback, meta: { model: "fallback", visionNote: "LLMエラー（フォールバック）" } };
   }
-
-  const data = await res.json();
-  const raw: string = data?.choices?.[0]?.message?.content ?? "";
-  const bullets = toBullets(raw);
-
-  return {
-    bullets: bullets.length ? bullets : fallback.bullets,
-    raw,
-    usedModel: model,
-    note: "LLMで生成",
-  };
 }
 
 export async function POST(req: Request) {
-  try {
-    const body = (await req.json()) as Input;
+  const body = (await req.json().catch(() => ({}))) as InputPayload;
 
-    const vision = await generateVisionWithLLM(body);
+  // 入力（デモなので未入力は0扱いで動かす）
+  const bankKey = (body.bank ?? "架空銀行A").trim();
+  const policy = BANK_POLICIES[bankKey] ?? BANK_POLICIES["架空銀行A"];
 
-    const incomeMan = Number(body.incomeMan ?? 0);
-    const loanRequestMan = Number(body.loanRequestMan ?? 0);
-    const otherDebtMan = Number(body.otherDebtMan ?? 0);
-    const assetsMan = Number(body.assetsMan ?? 0);
+  const incomeMan = clampNum(body.incomeMan, 0);
+  const assetsMan = clampNum(body.assetsMan, 0);
+  const otherDebtMan = clampNum(body.otherDebtMan, 0);
+  const loanRequestMan = clampNum(body.loanRequestMan, 0);
 
-    const lambda = policyGate({
-      incomeMan,
-      loanRequestMan,
+  // --- metrics（ルール計算） ---
+  const monthlyIncomeMan = incomeMan > 0 ? +(incomeMan / 12).toFixed(1) : 0;
+
+  const principalMan = loanRequestMan;
+
+  const estMortgagePayMan = principalMan > 0
+    ? +pmtMan(principalMan, policy.annualRatePct, policy.years).toFixed(1)
+    : 0;
+
+  const estOtherDebtPayMan = otherDebtMan > 0
+    ? +(otherDebtMan * policy.otherDebtPayCoeff).toFixed(1)
+    : 0;
+
+  const dtiPct = monthlyIncomeMan > 0
+    ? +(((estMortgagePayMan + estOtherDebtPayMan) / monthlyIncomeMan) * 100).toFixed(1)
+    : 0;
+
+  const downPaymentPct = (assetsMan + loanRequestMan) > 0
+    ? +((assetsMan / (assetsMan + loanRequestMan)) * 100).toFixed(1)
+    : 0;
+
+  const lti = incomeMan > 0 ? +(loanRequestMan / incomeMan).toFixed(1) : 0;
+
+  // --- policy gate判定（PASS/HOLD） ---
+  const flags: string[] = [];
+
+  if (incomeMan <= 0) flags.push("年収が未入力（または0）です");
+  if (loanRequestMan <= 0) flags.push("申込金額が未入力（または0）です");
+
+  if (monthlyIncomeMan > 0 && dtiPct > policy.dtiMaxPct) {
+    flags.push(`DTIが上限を超過（${dtiPct}% > ${policy.dtiMaxPct}%）`);
+  }
+
+  if (downPaymentPct < policy.downPaymentMinPct) {
+    flags.push(`頭金比率が最低基準未満（${downPaymentPct}% < ${policy.downPaymentMinPct}%）`);
+  }
+
+  if (incomeMan > 0 && lti > policy.ltiMax) {
+    flags.push(`LTIが上限を超過（${lti}倍 > ${policy.ltiMax}倍）`);
+  }
+
+  const result = flags.length === 0 ? "PASS" : "HOLD";
+
+  // --- required（改善目安） ---
+  // DTI制約から「借入をいくらまで落とせばよいか」概算
+  const maxMonthlyTotalPayMan = monthlyIncomeMan * (policy.dtiMaxPct / 100);
+  const maxMortgagePayMan = maxMonthlyTotalPayMan - estOtherDebtPayMan;
+
+  const maxPrincipalByDTI = maxMortgagePayMan > 0
+    ? pvFromPmtMan(maxMortgagePayMan, policy.annualRatePct, policy.years)
+    : 0;
+
+  const reduceLoanManForDTI =
+    (principalMan > 0 && maxPrincipalByDTI > 0)
+      ? Math.max(0, Math.round(principalMan - maxPrincipalByDTI))
+      : (principalMan > 0 && maxMortgagePayMan <= 0 ? Math.round(principalMan) : 0);
+
+  // 頭金制約のための追加自己資金
+  const extraAssets = requiredExtraAssetsForDownPayment(assetsMan, loanRequestMan, policy.downPaymentMinPct);
+  const increaseAssetsManForDownPayment = Math.max(0, Math.round(extraAssets));
+
+  // DTIが「他借入返済」で詰まっている場合の圧縮目安
+  // （maxMortgagePayMan < 0 なら、まず他借入月返済を減らす必要がある）
+  let reduceOtherDebtMan = 0;
+  if (maxMortgagePayMan < 0 && otherDebtMan > 0) {
+    const needReduceOtherPayMan = Math.abs(maxMortgagePayMan); // 万円/月
+    reduceOtherDebtMan = Math.min(
       otherDebtMan,
-      assetsMan,
-    });
+      Math.round(needReduceOtherPayMan / policy.otherDebtPayCoeff)
+    );
+  }
 
-    const trace = {
-      reason: lambda.reason,
-      actions: lambda.actions,
+  // --- Trace（判断理由と記録） ---
+  const reason =
+    result === "PASS"
+      ? `${policy.bank}のPolicy Gate上は条件を満たす範囲（ただし可否の決定はしない）`
+      : `${policy.bank}のPolicy Gate上で再検討が必要（ただし可否の決定はしない）`;
+
+  const actions: string[] = [
+    "条件の前提（年収・借入・自己資金）を再確認する",
+    "支出変動（家計）を想定して余裕を確認する",
+    "金利変動ケースも検討する",
+  ];
+
+  // HOLDの場合は“概算の目安”をTraceにも追加（UIはrequiredで表示）
+  if (result === "HOLD") {
+    if (reduceLoanManForDTI > 0) actions.unshift(`申込金額の見直し（概算：-${reduceLoanManForDTI}万円）`);
+    if (increaseAssetsManForDownPayment > 0) actions.unshift(`自己資金の増額（概算：+${increaseAssetsManForDownPayment}万円）`);
+    if (reduceOtherDebtMan > 0) actions.unshift(`他借入の圧縮（概算：-${reduceOtherDebtMan}万円）`);
+  }
+
+  const lambdaText =
+    result === "PASS"
+      ? `現条件では検討可能（可否は決定しない）`
+      : `要再検討：${flags.join(" / ")}`;
+
+  // --- V（LLM論点） ---
+  const vision = await generateVisionPoints({
+    incomeMan,
+    assetsMan,
+    otherDebtMan,
+    loanRequestMan,
+    family: body.family,
+    job: body.job,
+  });
+
+  const response = {
+    V: vision.points,
+    Lambda: {
+      method: "Policy Gate",
+      ruleId: policy.ruleId,
+      result,
+      note: "実行時の人介在なし（ルールで確定）",
+      flags: flags.length ? flags : [],
+      policy: {
+        bank: policy.bank,
+        dtiMaxPct: policy.dtiMaxPct,
+        downPaymentMinPct: policy.downPaymentMinPct,
+        annualRatePct: policy.annualRatePct,
+        years: policy.years,
+      },
+      metrics: {
+        monthlyIncomeMan,
+        principalMan,
+        estMortgagePayMan,
+        estOtherDebtPayMan,
+        dtiPct,
+        downPaymentPct,
+        lti,
+      },
+      required: {
+        reduceLoanManForDTI,
+        increaseAssetsManForDownPayment,
+        reduceOtherDebtMan,
+      },
+    },
+    Trace: {
+      reason,
+      actions,
       log: {
         E: "住宅購入資金の事前検討",
         V: "返済比率 / 借入状況 / 資産構成",
-        Lambda: `${lambda.method} (${lambda.ruleId})`,
-        Trace: lambda.result === "HOLD"
-          ? "現条件では判断保留"
-          : "現条件では検討可能（可否は決定しない）",
+        Lambda: `Policy Gate（${policy.ruleId}）: ${lambdaText}`,
+        Trace: reason,
       },
-    };
+    },
+    meta: {
+      model: vision.meta.model,
+      visionNote: vision.meta.visionNote,
+    },
+  };
 
-    return NextResponse.json({
-      V: vision.bullets,
-      Lambda: {
-        method: lambda.method,
-        ruleId: lambda.ruleId,
-        result: lambda.result,
-        note: "実行時の人介在なし（ルールで確定）",
-        flags: lambda.flags,
-        policy: lambda.policy,
-        metrics: lambda.metrics,
-        required: lambda.required,
-      },
-      Trace: trace,
-      meta: {
-        model: vision.usedModel,
-        visionNote: vision.note,
-      },
-    });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: "Bad Request", detail: String(e?.message ?? e) },
-      { status: 400 }
-    );
-  }
+  return NextResponse.json(response);
 }
