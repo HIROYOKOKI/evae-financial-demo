@@ -130,9 +130,12 @@ export default function Home() {
           <div className="text-xl font-semibold">
             EVΛƎ Framework / Design-by-Transparency
           </div>
-          <div className="mt-2 text-sm text-gray-700">
-            E – Origin → V – Vision → Λ – Choice → Ǝ – Trace
-          </div>
+          <FlowStepper
+  phase={
+    isLoading ? "generating" : result ? "done" : "idle"
+  }
+/>
+
           <div className="mt-1 text-xs text-gray-500">
             ※ 本デモでは、人は意思の起点（E）のみを与えます
           </div>
@@ -557,5 +560,69 @@ function Spinner() {
       className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"
       aria-label="loading"
     />
+  );
+}
+
+function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
+  const steps = [
+    { key: "E", label: "E – Origin" },
+    { key: "V", label: "V – Vision" },
+    { key: "L", label: "Λ – Choice" },
+    { key: "T", label: "Ǝ – Trace" },
+  ];
+
+  // 生成中は E→V→Λ→Ǝ をループ表示
+  const [idx, setIdx] = React.useState(0);
+
+  React.useEffect(() => {
+    if (phase !== "generating") return;
+    setIdx(0);
+    const t = setInterval(() => {
+      setIdx((v) => (v + 1) % steps.length);
+    }, 500);
+    return () => clearInterval(t);
+  }, [phase]);
+
+  const activeIndex =
+    phase === "idle" ? 0 : phase === "done" ? steps.length - 1 : idx;
+
+  return (
+    <div className="mt-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2 text-gray-600">
+        {steps.map((s, i) => {
+          const active = i === activeIndex;
+          const passed = i < activeIndex;
+
+          return (
+            <React.Fragment key={s.key}>
+              <span
+                className={[
+                  "rounded-full px-2 py-1 transition-all",
+                  active
+                    ? "bg-gray-900 text-white"
+                    : passed
+                    ? "bg-gray-100 text-gray-800"
+                    : "bg-transparent text-gray-500",
+                ].join(" ")}
+              >
+                {s.label}
+              </span>
+              {i < steps.length - 1 && (
+                <span className={active || passed ? "text-gray-400" : "text-gray-300"}>
+                  →
+                </span>
+              )}
+            </React.Fragment>
+          );
+        })}
+
+        {phase === "generating" && (
+          <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-500">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-gray-400" />
+            running
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
