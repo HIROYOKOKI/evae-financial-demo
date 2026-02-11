@@ -318,36 +318,38 @@ export default function Home() {
           </div>
 
           {/* ✅ 起動ボタン（Eカラー＋押下感＋ホバー） */}
-          <button
-            disabled={!canSubmit}
-            onClick={onGenerate}
-            className="
-              mt-6 w-full rounded-lg px-4 py-3 text-sm font-semibold
-              transition-all duration-150 ease-out
-              disabled:opacity-50 disabled:cursor-not-allowed
-              active:scale-[0.98]
-            "
-            style={{
-              backgroundColor: BTN_BASE,
-              color: "#ffffff",
-              boxShadow: "0 4px 14px rgba(255,69,0,0.30)",
-              transform: "translateY(0px)",
-              filter: isLoading ? "brightness(0.98)" : "none",
-            }}
-            onMouseEnter={(e) => {
-              if (!canSubmit) return;
-              e.currentTarget.style.backgroundColor = BTN_HOVER;
-              e.currentTarget.style.boxShadow = "0 6px 18px rgba(255,69,0,0.45)";
-              e.currentTarget.style.transform = "translateY(-1px)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = BTN_BASE;
-              e.currentTarget.style.boxShadow = "0 4px 14px rgba(255,69,0,0.30)";
-              e.currentTarget.style.transform = "translateY(0px)";
-            }}
-          >
-            {isLoading ? "生成中…" : "検討プロセスを表示する →"}
-          </button>
+         <button
+  disabled={!canSubmit}
+  onClick={onGenerate}
+  className="
+    mt-6 w-full rounded-lg px-4 py-3 text-sm font-semibold
+    transition-all duration-150 ease-out
+    active:scale-[0.98]
+  "
+  style={{
+    backgroundColor: canSubmit ? "#EA580C" : "#E5E7EB", // 有効:オレンジ / 無効:グレー
+    color: canSubmit ? "#ffffff" : "#9CA3AF",
+    boxShadow: canSubmit
+      ? "0 4px 14px rgba(234,88,12,0.35)"
+      : "none",
+    cursor: canSubmit ? "pointer" : "not-allowed",
+  }}
+  onMouseEnter={(e) => {
+    if (!canSubmit) return;
+    e.currentTarget.style.backgroundColor = "#C2410C";
+    e.currentTarget.style.boxShadow = "0 6px 18px rgba(234,88,12,0.45)";
+    e.currentTarget.style.transform = "translateY(-1px)";
+  }}
+  onMouseLeave={(e) => {
+    if (!canSubmit) return;
+    e.currentTarget.style.backgroundColor = "#EA580C";
+    e.currentTarget.style.boxShadow = "0 4px 14px rgba(234,88,12,0.35)";
+    e.currentTarget.style.transform = "translateY(0px)";
+  }}
+>
+  {isLoading ? "生成中…" : "検討プロセスを表示する →"}
+</button>
+
 
           {/* ✅ 何が足りないか表示（デモの体験を壊さない） */}
           {!canSubmit && (
