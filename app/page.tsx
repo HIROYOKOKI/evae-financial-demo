@@ -73,6 +73,76 @@ const initialForm: FormState = {
   loanRequestMan: "",
 };
 
+/**
+ * --- Demo metric model (client fallback) ---
+ * - monthlyIncomeMan = incomeMan / 12
+ * - principalMan = loanRequestMan
+ * - estMortgagePayMan = fixed-rate 35y simple amortization
+ * - estOtherDebtPayMan = otherDebtMan * 2% / month
+ * - DTI(%) = (estMortgagePay + estOtherDebtPay) / monthlyIncome * 100
+ * - downPaymentPct(%) = assets / (loan + assets) * 100  ※超簡易
+ * - LTI(倍) = loan / income
+ */
+function calcDerivedMetrics(input: {
+  incomeMan?: number;
+  loanRequestMan?: number;
+  assetsMan?: number;
+  otherDebtMan?: number;
+  annualRatePct: number;
+  years: number;
+}) {
+  const incomeMan = toFinite(input.incomeMan);
+  const loanMan = toFinite(input.loanRequestMan);
+  const assetsMan = toFinite(input.assetsMan);
+  const otherDebtMan = toFinite(input.otherDebtMan);
+
+  const monthlyIncomeMan = incomeMan > 0 ? incomeMan / 12 : 0;
+  const principalMan = loanMan;
+
+  const r = input.annualRatePct > 0 ? input.annualRatePct / 100 / 12 : 0; // monthly rate
+  const n = Math.max(1, Math.round(input.years * 12));
+
+  let estMortgagePayMan = 0;
+  if (principalMan > 0) {
+    if (r === 0) {
+      estMortgagePayMan = principalMan / n;
+    } else {
+      // amortization: P * r * (1+r)^n / ((1+r)^n - 1)
+      const pow = Math.pow(1 + r, n);
+      estMortgagePayMan = (principalMan * r * pow) / (pow - 1);
+    }
+  }
+
+  const estOtherDebtPayMan = otherDebtMan > 0 ? otherDebtMan * 0.02 : 0;
+
+  const dtiPct =
+    monthlyIncomeMan > 0 ? ((estMortgagePayMan + estOtherDebtPayMan) / monthlyIncomeMan) * 100 : 0;
+
+  const downPaymentPct =
+    loanMan + assetsMan > 0 ? (assetsMan / (loanMan + assetsMan)) * 100 : 0;
+
+  const lti = incomeMan > 0 ? loanMan / incomeMan : 0;
+
+  // round for display (1 decimal)
+  return {
+    monthlyIncomeMan: round1(monthlyIncomeMan),
+    principalMan: round1(principalMan),
+    estMortgagePayMan: round1(estMortgagePayMan),
+    estOtherDebtPayMan: round1(estOtherDebtPayMan),
+    dtiPct: round1(dtiPct),
+    downPaymentPct: round1(downPaymentPct),
+    lti: round1(lti),
+  };
+}
+
+function round1(n: number) {
+  return Math.round(n * 10) / 10;
+}
+function toFinite(v: any) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default function Home() {
   const [form, setForm] = useState<FormState>(initialForm);
   const [isLoading, setIsLoading] = useState(false);
@@ -172,14 +242,54 @@ export default function Home() {
     }
   }
 
+  // --- policy defaults (demo) ---
+  const annualRate = result?.Lambda?.policy?.annualRatePct ?? 1.5;
+  const years = result?.Lambda?.policy?.years ?? 35;
+
   const dtiMax = result?.Lambda?.policy?.dtiMaxPct ?? 35;
   const downMin = result?.Lambda?.policy?.downPaymentMinPct ?? 10;
   const ltiMax = 7; // デモ固定
 
+  // --- derived metrics (prefer server, fallback to client calc) ---
+  const derived = useMemo(() => {
+    const server = result?.Lambda?.metrics;
+    if (server && Object.values(server).some((v) => typeof v === "number")) {
+      return {
+        monthlyIncomeMan: server.monthlyIncomeMan ?? 0,
+        principalMan: server.principalMan ?? 0,
+        estMortgagePayMan: server.estMortgagePayMan ?? 0,
+        estOtherDebtPayMan: server.estOtherDebtPayMan ?? 0,
+        dtiPct: server.dtiPct ?? 0,
+        downPaymentPct: server.downPaymentPct ?? 0,
+        lti: server.lti ?? 0,
+      };
+    }
+
+    // fallback from form
+    return calcDerivedMetrics({
+      incomeMan: form.incomeMan ? Number(form.incomeMan) : 0,
+      loanRequestMan: form.loanRequestMan ? Number(form.loanRequestMan) : 0,
+      assetsMan: form.assetsMan ? Number(form.assetsMan) : 0,
+      otherDebtMan: form.otherDebtMan ? Number(form.otherDebtMan) : 0,
+      annualRatePct: annualRate,
+      years,
+    });
+  }, [result, form, annualRate, years]);
+
+  const showMetrics = useMemo(() => {
+    // show metrics if we have result OR user entered any of the core numeric fields
+    const hasCore =
+      String(form.incomeMan).trim() !== "" ||
+      String(form.loanRequestMan).trim() !== "" ||
+      String(form.assetsMan).trim() !== "" ||
+      String(form.otherDebtMan).trim() !== "";
+    return Boolean(result) || hasCore;
+  }, [result, form]);
+
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen" style={{ backgroundColor: "#FFFFFF" }}>
       {/* Header (sticky) */}
-      <header className="sticky top-0 z-10 border-b bg-white/90 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b" style={{ backgroundColor: "rgba(255,255,255,0.90)" }}>
         <div className="mx-auto max-w-4xl px-6 py-4">
           <div className="text-xl font-semibold">EVΛƎ Framework / Design-by-Transparency</div>
 
@@ -271,6 +381,61 @@ export default function Home() {
             />
           </div>
 
+          {/* ✅ その場でメトリクス（超重要：構造が“数値で見える”） */}
+          {showMetrics && (
+            <div className="mt-6 rounded-lg border bg-gray-50 p-4 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="font-semibold">数値メトリクス（デモ計算）</div>
+                <div className="text-xs text-gray-500">
+                  金利 {annualRate}% / 期間 {years}年 / 他債務 月2%（近似）
+                </div>
+              </div>
+
+              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Metric
+                  label="年収（月）"
+                  value={`${derived.monthlyIncomeMan || 0} 万円`}
+                  hint={`monthlyIncome = 年収 ÷ 12`}
+                />
+                <Metric
+                  label="住宅ローン月返済（推定）"
+                  value={`${derived.estMortgagePayMan || 0} 万円`}
+                  hint={`固定金利・${years}年の簡易償却式（0%時は元本/回数）`}
+                />
+                <Metric
+                  label="他借入月返済（推定）"
+                  value={`${derived.estOtherDebtPayMan || 0} 万円`}
+                  hint={`他債務（月） = 他債務 × 2%`}
+                />
+
+                <Metric
+                  label="返済負担率 DTI"
+                  value={`${derived.dtiPct || 0} %`}
+                  tone={(derived.dtiPct || 0) > dtiMax ? "warn" : "good"}
+                  hint={`DTI(%) = (住宅ローン月返済 + 他借入月返済) ÷ 年収（月） × 100 / 上限=${dtiMax}%`}
+                />
+
+                <Metric
+                  label="自己資金比率（頭金）"
+                  value={`${derived.downPaymentPct || 0} %`}
+                  tone={(derived.downPaymentPct || 0) < downMin ? "warn" : "good"}
+                  hint={`頭金(%) = 自己資金 ÷ (申込金額 + 自己資金) × 100 / 最低=${downMin}%`}
+                />
+
+                <Metric
+                  label="申込金額/年収 LTI"
+                  value={`${derived.lti || 0} 倍`}
+                  tone={(derived.lti || 0) > ltiMax ? "warn" : "good"}
+                  hint={`LTI(倍) = 申込金額 ÷ 年収 / 目安上限=${ltiMax}倍（デモ）`}
+                />
+              </div>
+
+              <div className="mt-3 text-xs text-gray-500">
+                ※ これは「判断」ではなく、Λ（ルール）の前提となる“計算可能な構造”の表示です
+              </div>
+            </div>
+          )}
+
           {/* ✅ 確認サイン（軽量） */}
           <div className="mt-6 rounded-lg border bg-gray-50 p-4">
             <div className="text-xs font-semibold text-gray-700">確認サイン（デモ）</div>
@@ -331,9 +496,7 @@ export default function Home() {
           </button>
 
           {!canSubmit ? (
-            <div className="mt-2 text-xs text-gray-500">
-              ※ 入力＋確認サイン（2つ）で生成できます（デモ演出）
-            </div>
+            <div className="mt-2 text-xs text-gray-500">※ 入力＋確認サイン（2つ）で生成できます（デモ演出）</div>
           ) : null}
 
           {error && (
@@ -403,53 +566,44 @@ V: 生成中…
                 <Info label="実行時の人介在" value={result.Lambda.note ?? "なし"} />
               </div>
 
-              {/* 数値サマリー */}
-              {result?.Lambda?.metrics && (
-                <div className="mt-4 rounded-lg bg-gray-50 p-4 text-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="font-semibold">数値サマリー（ルール計算）</div>
-                    {result?.Lambda?.policy?.bank && <div className="text-xs text-gray-500">{result.Lambda.policy.bank}</div>}
-                  </div>
-
-                  <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Metric label="年収（月）" value={`${result.Lambda.metrics.monthlyIncomeMan ?? "-"} 万円`} />
-                    <Metric label="住宅ローン月返済（推定）" value={`${result.Lambda.metrics.estMortgagePayMan ?? "-"} 万円`} />
-                    <Metric label="他借入月返済（推定）" value={`${result.Lambda.metrics.estOtherDebtPayMan ?? "-"} 万円`} />
-
-                    <Metric
-                      label="返済負担率 DTI"
-                      value={`${result.Lambda.metrics.dtiPct ?? "-"} %`}
-                      tone={(result.Lambda.metrics.dtiPct ?? 0) > dtiMax ? "warn" : "good"}
-                      hint={`DTI(%) = (住宅ローン月返済 + 他借入月返済) ÷ 年収（月） × 100 / 上限=${dtiMax}%`}
-                    />
-
-                    <Metric
-                      label="自己資金比率（頭金）"
-                      value={`${result.Lambda.metrics.downPaymentPct ?? "-"} %`}
-                      tone={(result.Lambda.metrics.downPaymentPct ?? 0) < downMin ? "warn" : "good"}
-                      hint={`頭金(%) = 自己資金 ÷ 申込金額 × 100 / 最低=${downMin}%`}
-                    />
-
-                    <Metric
-                      label="申込金額/年収 LTI"
-                      value={`${result.Lambda.metrics.lti ?? "-"} 倍`}
-                      tone={(result.Lambda.metrics.lti ?? 0) > ltiMax ? "warn" : "good"}
-                      hint={`LTI(倍) = 申込金額 ÷ 年収 / 目安上限=${ltiMax}倍（デモ）`}
-                    />
-                  </div>
-
-                  {(result?.Lambda?.policy?.dtiMaxPct ||
-                    result?.Lambda?.policy?.downPaymentMinPct ||
-                    result?.Lambda?.policy?.annualRatePct ||
-                    result?.Lambda?.policy?.years) && (
-                    <div className="mt-3 text-xs text-gray-600">
-                      ポリシー：DTI上限 {result.Lambda.policy?.dtiMaxPct ?? "-"}% / 頭金最低{" "}
-                      {result.Lambda.policy?.downPaymentMinPct ?? "-"}% / 金利 {result.Lambda.policy?.annualRatePct ?? "-"}% / 期間{" "}
-                      {result.Lambda.policy?.years ?? "-"}年
-                    </div>
-                  )}
+              {/* 数値サマリー（サーバー or フォーム計算） */}
+              <div className="mt-4 rounded-lg bg-gray-50 p-4 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-semibold">数値サマリー（ルール計算）</div>
+                  {result?.Lambda?.policy?.bank && <div className="text-xs text-gray-500">{result.Lambda.policy.bank}</div>}
                 </div>
-              )}
+
+                <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Metric label="年収（月）" value={`${derived.monthlyIncomeMan || 0} 万円`} />
+                  <Metric label="住宅ローン月返済（推定）" value={`${derived.estMortgagePayMan || 0} 万円`} />
+                  <Metric label="他借入月返済（推定）" value={`${derived.estOtherDebtPayMan || 0} 万円`} />
+
+                  <Metric
+                    label="返済負担率 DTI"
+                    value={`${derived.dtiPct || 0} %`}
+                    tone={(derived.dtiPct || 0) > dtiMax ? "warn" : "good"}
+                    hint={`DTI(%) = (住宅ローン月返済 + 他借入月返済) ÷ 年収（月） × 100 / 上限=${dtiMax}%`}
+                  />
+
+                  <Metric
+                    label="自己資金比率（頭金）"
+                    value={`${derived.downPaymentPct || 0} %`}
+                    tone={(derived.downPaymentPct || 0) < downMin ? "warn" : "good"}
+                    hint={`頭金(%) = 自己資金 ÷ (申込金額 + 自己資金) × 100 / 最低=${downMin}%`}
+                  />
+
+                  <Metric
+                    label="申込金額/年収 LTI"
+                    value={`${derived.lti || 0} 倍`}
+                    tone={(derived.lti || 0) > ltiMax ? "warn" : "good"}
+                    hint={`LTI(倍) = 申込金額 ÷ 年収 / 目安上限=${ltiMax}倍（デモ）`}
+                  />
+                </div>
+
+                <div className="mt-3 text-xs text-gray-600">
+                  ポリシー：DTI上限 {dtiMax}% / 頭金最低 {downMin}% / 金利 {annualRate}% / 期間 {years}年
+                </div>
+              </div>
 
               {result.Lambda.flags && result.Lambda.flags.length > 0 && (
                 <div className="mt-4 rounded-lg bg-gray-50 p-4 text-sm text-gray-800">
@@ -502,31 +656,22 @@ V: 生成中…
 
                     <ul className="mt-3 list-disc pl-5 space-y-1 text-gray-700">
                       {(result.Lambda.required.reduceLoanManForDTI ?? 0) > 0 && (
-                        <li>
-                          申込金額を約 {result.Lambda.required.reduceLoanManForDTI} 万円下げる（DTI目標に近づける）
-                        </li>
+                        <li>申込金額を約 {result.Lambda.required.reduceLoanManForDTI} 万円下げる（DTI目標に近づける）</li>
                       )}
 
                       {(result.Lambda.required.increaseAssetsManForDownPayment ?? 0) > 0 && (
-                        <li>
-                          自己資金を約 {result.Lambda.required.increaseAssetsManForDownPayment} 万円増やす（頭金目標に近づける）
-                        </li>
+                        <li>自己資金を約 {result.Lambda.required.increaseAssetsManForDownPayment} 万円増やす（頭金目標に近づける）</li>
                       )}
 
                       {(result.Lambda.required.reduceOtherDebtMan ?? 0) > 0 && (
-                        <li>
-                          他の借入を約 {result.Lambda.required.reduceOtherDebtMan} 万円圧縮する（比率上限に近づける）
-                        </li>
+                        <li>他の借入を約 {result.Lambda.required.reduceOtherDebtMan} 万円圧縮する（比率上限に近づける）</li>
                       )}
 
-                      {/* ✅ 修正ポイント：条件は必ず { (cond) && (<li/>) } で包む */}
                       {(
                         (result.Lambda.required.reduceLoanManForDTI ?? 0) <= 0 &&
                         (result.Lambda.required.increaseAssetsManForDownPayment ?? 0) <= 0 &&
                         (result.Lambda.required.reduceOtherDebtMan ?? 0) <= 0
-                      ) && (
-                        <li>現条件では主要指標はポリシー範囲内（ただし可否は決定しない）</li>
-                      )}
+                      ) && <li>現条件では主要指標はポリシー範囲内（ただし可否は決定しない）</li>}
                     </ul>
                   </div>
                 )}
@@ -540,7 +685,6 @@ V: ${result.Trace.log.V}
               </div>
 
               <div className="mt-4 rounded-lg border p-4 text-sm">
-              
                 <div className="mt-1 text-gray-700">Ǝトレースが存在する限り、このAIはブラックボックスになりません。</div>
               </div>
 
@@ -624,18 +768,31 @@ function Metric({
   tone?: "neutral" | "warn" | "good";
   hint?: string;
 }) {
-  // Tailwind purge対策：色は inline style
   const styles =
     tone === "warn"
-      ? { backgroundColor: "#FF4500", borderColor: "#FDBA74" } // orange
+      ? {
+          backgroundColor: "rgba(255,69,0,0.10)",
+          borderColor: "rgba(255,69,0,0.35)",
+          color: "#111827",
+        }
       : tone === "good"
-      ? { backgroundColor: "#2563EB", borderColor: "#6EE7B7" } // green
-      : { backgroundColor: "#FFFFFF", borderColor: "#E5E7EB" }; // neutral
+      ? {
+          backgroundColor: "rgba(37,99,235,0.10)",
+          borderColor: "rgba(37,99,235,0.35)",
+          color: "#111827",
+        }
+      : {
+          backgroundColor: "#FFFFFF",
+          borderColor: "#E5E7EB",
+          color: "#111827",
+        };
 
   return (
     <div className="rounded-lg border p-3" style={styles} title={hint ?? ""}>
       <div className="text-xs font-semibold text-gray-600">{label}</div>
-      <div className="mt-1 font-medium text-gray-900">{value}</div>
+      <div className="mt-1 font-medium" style={{ color: styles.color }}>
+        {value}
+      </div>
       {hint && <div className="mt-1 text-[11px] text-gray-500">ⓘ 式/根拠（hover）</div>}
     </div>
   );
@@ -694,9 +851,7 @@ function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
                 {s.label}
               </span>
 
-              {i < steps.length - 1 && (
-                <span style={{ color: "#9CA3AF" /* gray-400 */ }}>→</span>
-              )}
+              {i < steps.length - 1 && <span style={{ color: "#9CA3AF" }}>→</span>}
             </React.Fragment>
           );
         })}
@@ -711,4 +866,3 @@ function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
     </div>
   );
 }
-　
