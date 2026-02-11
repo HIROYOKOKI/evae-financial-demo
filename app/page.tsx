@@ -346,7 +346,7 @@ export default function Home() {
               e.currentTarget.style.transform = "translateY(0px)";
             }}
           >
-            {isLoading ? "生成中…" : "判断構造を生成する →"}
+            {isLoading ? "生成中…" : "検討プロセスを表示する →"}
           </button>
 
           {/* ✅ 何が足りないか表示（デモの体験を壊さない） */}
@@ -561,7 +561,7 @@ V: ${result.Trace.log.V}
               </div>
 
               <div className="mt-4 rounded-lg border p-4 text-sm">
-                <div className="font-semibold">決め台詞</div>
+                <div className="font-semibold">　</div>
                 <div className="mt-1 text-gray-700">Ǝトレースが存在する限り、このAIはブラックボックスになりません。</div>
               </div>
 
