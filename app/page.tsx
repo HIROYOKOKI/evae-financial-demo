@@ -660,7 +660,6 @@ function Spinner() {
 }
 
 function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
-  // ✅ 公式カラー：Eオレンジ / Vブルー / Λ黄緑 / Ǝパープル
   const steps = [
     { key: "E", label: "E – Origin", color: "#FF4500" },
     { key: "V", label: "V – Vision", color: "#2563EB" },
@@ -681,23 +680,23 @@ function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
 
   return (
     <div className="mt-2 text-sm">
-      <div className="flex flex-wrap items-center gap-2 text-gray-600">
+      <div className="flex flex-wrap items-center gap-2">
         {steps.map((s, i) => {
           const active = i === activeIndex;
-          const passed = i < activeIndex;
 
           const style = active
             ? { backgroundColor: s.color, color: "#fff", borderColor: s.color }
-            : passed
-            ? { backgroundColor: "#F3F4F6", color: "#111827", borderColor: "#E5E7EB" }
-            : { backgroundColor: "transparent", color: "#6B7280", borderColor: "transparent" };
+            : { backgroundColor: "transparent", color: s.color, borderColor: s.color };
 
           return (
             <React.Fragment key={s.key}>
               <span className="rounded-full px-2 py-1 transition-all border" style={style}>
                 {s.label}
               </span>
-              {i < steps.length - 1 && <span className={active || passed ? "text-gray-400" : "text-gray-300"}>→</span>}
+
+              {i < steps.length - 1 && (
+                <span style={{ color: "#9CA3AF" /* gray-400 */ }}>→</span>
+              )}
             </React.Fragment>
           );
         })}
