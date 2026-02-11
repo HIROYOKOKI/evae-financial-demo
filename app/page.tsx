@@ -77,6 +77,34 @@ export default function Home() {
   const [result, setResult] = useState<ApiResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // --- dropdown options ---
+  const ageOptions = Array.from({ length: 51 }, (_, i) => {
+    const v = String(i + 20); // 20〜70
+    return { label: v, value: v };
+  });
+
+  const jobOptions = [
+    { label: "会社員", value: "会社員" },
+    { label: "公務員", value: "公務員" },
+    { label: "自営業", value: "自営業" },
+    { label: "経営者", value: "経営者" },
+    { label: "契約/派遣", value: "契約/派遣" },
+    { label: "パート/アルバイト", value: "パート/アルバイト" },
+    { label: "専門職（医師/弁護士など）", value: "専門職" },
+    { label: "その他", value: "その他" },
+  ];
+
+  const familyOptions = [
+    { label: "単身", value: "単身" },
+    { label: "夫婦", value: "夫婦" },
+    { label: "夫婦＋子1人", value: "夫婦＋子1人" },
+    { label: "夫婦＋子2人", value: "夫婦＋子2人" },
+    { label: "夫婦＋子3人以上", value: "夫婦＋子3人以上" },
+    { label: "ひとり親＋子", value: "ひとり親＋子" },
+    { label: "二世帯", value: "二世帯" },
+    { label: "その他", value: "その他" },
+  ];
+
   const canSubmit = useMemo(() => {
     return !isLoading;
   }, [isLoading]);
@@ -115,30 +143,25 @@ export default function Home() {
     } finally {
       setIsLoading(false);
       setTimeout(() => {
-        document
-          .getElementById("section-v")
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        document.getElementById("section-v")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 50);
     }
   }
+
+  const dtiMax = result?.Lambda?.policy?.dtiMaxPct ?? 35;
+  const downMin = result?.Lambda?.policy?.downPaymentMinPct ?? 10;
+  const ltiMax = 7; // 今のPolicyGateと合わせる（デモ固定）
 
   return (
     <main className="min-h-screen bg-white">
       {/* Header (sticky) */}
       <header className="sticky top-0 z-10 border-b bg-white/90 backdrop-blur">
         <div className="mx-auto max-w-4xl px-6 py-4">
-          <div className="text-xl font-semibold">
-            EVΛƎ Framework / Design-by-Transparency
-          </div>
-          <FlowStepper
-  phase={
-    isLoading ? "generating" : result ? "done" : "idle"
-  }
-/>
+          <div className="text-xl font-semibold">EVΛƎ Framework / Design-by-Transparency</div>
 
-          <div className="mt-1 text-xs text-gray-500">
-            ※ 本デモでは、人は意思の起点（E）のみを与えます
-          </div>
+          <FlowStepper phase={isLoading ? "generating" : result ? "done" : "idle"} />
+
+          <div className="mt-1 text-xs text-gray-500">※ 本デモでは、人は意思の起点（E）のみを与えます</div>
         </div>
       </header>
 
@@ -163,51 +186,65 @@ export default function Home() {
 
           <p className="mt-2 text-sm text-gray-700">
             この入力は融資の可否を決定するものではありません。次のステップでは
-            <span className="font-semibold">「判断がどのような構造で検討されるか」</span>
-            をAIが整理します。
+            <span className="font-semibold">「判断がどのような構造で検討されるか」</span>をAIが整理します。
           </p>
 
           <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* ✅ 年齢：プルダウン */}
             <Field
               label="年齢"
               value={form.age}
-              placeholder="例：35"
+              placeholder="選択してください"
+              options={ageOptions}
               onChange={(v) => setForm({ ...form, age: v })}
             />
+
+            {/* ✅ 職業：プルダウン */}
             <Field
               label="職業（選択式）"
               value={form.job}
-              placeholder="例：会社員"
+              placeholder="選択してください"
+              options={jobOptions}
               onChange={(v) => setForm({ ...form, job: v })}
             />
+
+            {/* 年収：数値入力 */}
             <Field
               label="年収（万円）"
               value={form.incomeMan}
               placeholder="例：650"
+              type="number"
               onChange={(v) => setForm({ ...form, incomeMan: v })}
             />
+
+            {/* ✅ 家族構成：プルダウン */}
             <Field
               label="家族構成（簡易）"
               value={form.family}
-              placeholder="例：夫婦＋子1人"
+              placeholder="選択してください"
+              options={familyOptions}
               onChange={(v) => setForm({ ...form, family: v })}
             />
+
             <Field
               label="自己資金（万円）"
               value={form.assetsMan}
               placeholder="例：400"
+              type="number"
               onChange={(v) => setForm({ ...form, assetsMan: v })}
             />
             <Field
               label="他の借入（万円）"
               value={form.otherDebtMan}
               placeholder="例：120"
+              type="number"
               onChange={(v) => setForm({ ...form, otherDebtMan: v })}
             />
             <Field
               label="申込金額（万円）"
               value={form.loanRequestMan}
               placeholder="例：3800"
+              type="number"
               onChange={(v) => setForm({ ...form, loanRequestMan: v })}
             />
           </div>
@@ -221,9 +258,7 @@ export default function Home() {
           </button>
 
           {error && (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
           )}
         </section>
 
@@ -237,10 +272,7 @@ export default function Home() {
 
             <div className="mt-5 space-y-3">
               <LoadingRow label="V – Vision" desc="論点を展開中（判断しない）" />
-              <LoadingRow
-                label="Λ – Choice"
-                desc="Policy Gate を適用中（実行時の人介在なし）"
-              />
+              <LoadingRow label="Λ – Choice" desc="Policy Gate を適用中（実行時の人介在なし）" />
               <LoadingRow label="Ǝ – Trace" desc="再生可能な記録を生成中" />
             </div>
 
@@ -256,18 +288,14 @@ V: 生成中…
         {/* V */}
         <section id="section-v" className="rounded-xl border p-6">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">
-              V – Vision｜AIが提示する論点（判断しない）
-            </h2>
+            <h2 className="text-lg font-semibold">V – Vision｜AIが提示する論点（判断しない）</h2>
             <span className="text-xs text-gray-500">
               {result?.meta?.visionNote ? `(${result.meta.visionNote})` : "—"}
             </span>
           </div>
 
           {!result ? (
-            <p className="mt-3 text-sm text-gray-600">
-              「判断構造を生成する」を押すと、ここにAI生成の論点が表示されます。
-            </p>
+            <p className="mt-3 text-sm text-gray-600">「判断構造を生成する」を押すと、ここにAI生成の論点が表示されます。</p>
           ) : (
             <>
               <ul className="mt-3 space-y-2 text-sm text-gray-700 list-disc pl-5">
@@ -275,9 +303,7 @@ V: 生成中…
                   <li key={i}>{v}</li>
                 ))}
               </ul>
-              <p className="mt-3 text-xs text-gray-500">
-                ※ 可否の提示や数値断定は行いません（論点展開に限定）
-              </p>
+              <p className="mt-3 text-xs text-gray-500">※ 可否の提示や数値断定は行いません（論点展開に限定）</p>
             </>
           )}
         </section>
@@ -285,16 +311,12 @@ V: 生成中…
         {/* Λ */}
         <section className="rounded-xl border p-6">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">
-              Λ – Choice｜判断方法の確定（ルール）
-            </h2>
+            <h2 className="text-lg font-semibold">Λ – Choice｜判断方法の確定（ルール）</h2>
             <span className="text-xs text-gray-500">Rule-based</span>
           </div>
 
           {!result ? (
-            <p className="mt-3 text-sm text-gray-600">
-              生成後、ここに Policy Gate の結果（PASS / HOLD）が表示されます。
-            </p>
+            <p className="mt-3 text-sm text-gray-600">生成後、ここに Policy Gate の結果（PASS / HOLD）が表示されます。</p>
           ) : (
             <>
               <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
@@ -304,50 +326,45 @@ V: 生成中…
                 <Info label="実行時の人介在" value={result.Lambda.note ?? "なし"} />
               </div>
 
-              {/* ✅ 数値サマリー（ここが追加） */}
+              {/* ✅ 数値サマリー */}
               {result?.Lambda?.metrics && (
                 <div className="mt-4 rounded-lg bg-gray-50 p-4 text-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="font-semibold">数値サマリー（ルール計算）</div>
                     {result?.Lambda?.policy?.bank && (
-                      <div className="text-xs text-gray-500">
-                        {result.Lambda.policy.bank}
-                      </div>
+                      <div className="text-xs text-gray-500">{result.Lambda.policy.bank}</div>
                     )}
                   </div>
 
                   <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Metric
-                      label="年収（月）"
-                      value={`${result.Lambda.metrics.monthlyIncomeMan ?? "-"} 万円`}
-                    />
-                    <Metric
-                      label="住宅ローン月返済（推定）"
-                      value={`${result.Lambda.metrics.estMortgagePayMan ?? "-"} 万円`}
-                    />
+                    <Metric label="年収（月）" value={`${result.Lambda.metrics.monthlyIncomeMan ?? "-"} 万円`} />
+
+                    <Metric label="住宅ローン月返済（推定）" value={`${result.Lambda.metrics.estMortgagePayMan ?? "-"} 万円`} />
+
                     <Metric
                       label="他借入月返済（推定）"
                       value={`${result.Lambda.metrics.estOtherDebtPayMan ?? "-"} 万円`}
                     />
+
                     <Metric
-  label="返済負担率 DTI"
-  value={`${result.Lambda.metrics.dtiPct ?? "-"} %`}
-  tone={
-    (result.Lambda.metrics.dtiPct ?? 0) >
-    (result.Lambda.policy?.dtiMaxPct ?? 35)
-      ? "warn"
-      : "good"
-  }
-  hint={`DTI(%) = (住宅ローン月返済 + 他借入月返済) ÷ 年収（月） × 100 / 上限=${result.Lambda.policy?.dtiMaxPct ?? 35}%`}
-/>
+                      label="返済負担率 DTI"
+                      value={`${result.Lambda.metrics.dtiPct ?? "-"} %`}
+                      tone={(result.Lambda.metrics.dtiPct ?? 0) > dtiMax ? "warn" : "good"}
+                      hint={`DTI(%) = (住宅ローン月返済 + 他借入月返済) ÷ 年収（月） × 100 / 上限=${dtiMax}%`}
+                    />
 
                     <Metric
                       label="自己資金比率（頭金）"
                       value={`${result.Lambda.metrics.downPaymentPct ?? "-"} %`}
+                      tone={(result.Lambda.metrics.downPaymentPct ?? 0) < downMin ? "warn" : "good"}
+                      hint={`頭金(%) = 自己資金 ÷ 申込金額 × 100 / 最低=${downMin}%`}
                     />
+
                     <Metric
                       label="申込金額/年収 LTI"
                       value={`${result.Lambda.metrics.lti ?? "-"} 倍`}
+                      tone={(result.Lambda.metrics.lti ?? 0) > ltiMax ? "warn" : "good"}
+                      hint={`LTI(倍) = 申込金額 ÷ 年収 / 目安上限=${ltiMax}倍（デモ）`}
                     />
                   </div>
 
@@ -356,10 +373,9 @@ V: 生成中…
                     result?.Lambda?.policy?.annualRatePct ||
                     result?.Lambda?.policy?.years) && (
                     <div className="mt-3 text-xs text-gray-600">
-                      ポリシー：DTI上限 {result.Lambda.policy?.dtiMaxPct ?? "-"}% /
-                      頭金最低 {result.Lambda.policy?.downPaymentMinPct ?? "-"}% /
-                      金利 {result.Lambda.policy?.annualRatePct ?? "-"}% /
-                      期間 {result.Lambda.policy?.years ?? "-"}年
+                      ポリシー：DTI上限 {result.Lambda.policy?.dtiMaxPct ?? "-"}% / 頭金最低{" "}
+                      {result.Lambda.policy?.downPaymentMinPct ?? "-"}% / 金利{" "}
+                      {result.Lambda.policy?.annualRatePct ?? "-"}% / 期間 {result.Lambda.policy?.years ?? "-"}年
                     </div>
                   )}
                 </div>
@@ -367,9 +383,7 @@ V: 生成中…
 
               {result.Lambda.flags && result.Lambda.flags.length > 0 && (
                 <div className="mt-4 rounded-lg bg-gray-50 p-4 text-sm text-gray-800">
-                  <div className="text-xs font-semibold text-gray-600">
-                    HOLD の要因（ルール側）
-                  </div>
+                  <div className="text-xs font-semibold text-gray-600">HOLD の要因（ルール側）</div>
                   <ul className="mt-2 list-disc pl-5 space-y-1">
                     {result.Lambda.flags.map((f, i) => (
                       <li key={i}>{f}</li>
@@ -393,9 +407,7 @@ V: 生成中…
           </div>
 
           {!result ? (
-            <p className="mt-3 text-sm text-gray-600">
-              生成後、ここに「説明ではない」Trace（再生可能な記録）が表示されます。
-            </p>
+            <p className="mt-3 text-sm text-gray-600">生成後、ここに「説明ではない」Trace（再生可能な記録）が表示されます。</p>
           ) : (
             <>
               <div className="mt-4 space-y-3 text-sm text-gray-700">
@@ -413,7 +425,7 @@ V: 生成中…
                   </ul>
                 </div>
 
-                {/* ✅ 改善の目安（ここが追加） */}
+                {/* ✅ 改善の目安 */}
                 {result?.Lambda?.required && (
                   <div className="mt-4 rounded-lg border p-4 text-sm">
                     <div className="font-semibold">改善の目安（概算）</div>
@@ -424,20 +436,17 @@ V: 生成中…
                     <ul className="mt-3 list-disc pl-5 space-y-1 text-gray-700">
                       {(result.Lambda.required.reduceLoanManForDTI ?? 0) > 0 && (
                         <li>
-                          申込金額を約 {result.Lambda.required.reduceLoanManForDTI} 万円下げる
-                          （DTI目標に近づける）
+                          申込金額を約 {result.Lambda.required.reduceLoanManForDTI} 万円下げる（DTI目標に近づける）
                         </li>
                       )}
                       {(result.Lambda.required.increaseAssetsManForDownPayment ?? 0) > 0 && (
                         <li>
-                          自己資金を約 {result.Lambda.required.increaseAssetsManForDownPayment} 万円増やす
-                          （頭金目標に近づける）
+                          自己資金を約 {result.Lambda.required.increaseAssetsManForDownPayment} 万円増やす（頭金目標に近づける）
                         </li>
                       )}
                       {(result.Lambda.required.reduceOtherDebtMan ?? 0) > 0 && (
                         <li>
-                          他の借入を約 {result.Lambda.required.reduceOtherDebtMan} 万円圧縮する
-                          （比率上限に近づける）
+                          他の借入を約 {result.Lambda.required.reduceOtherDebtMan} 万円圧縮する（比率上限に近づける）
                         </li>
                       )}
                       {(result.Lambda.required.reduceLoanManForDTI ?? 0) <= 0 &&
@@ -458,15 +467,11 @@ V: ${result.Trace.log.V}
               </div>
 
               <div className="mt-4 rounded-lg border p-4 text-sm">
-                
-                <div className="mt-1 text-gray-700">
-                  Ǝトレースが存在する限り、このAIはブラックボックスになりません。
-                </div>
+                <div className="font-semibold">決め台詞</div>
+                <div className="mt-1 text-gray-700">Ǝトレースが存在する限り、このAIはブラックボックスになりません。</div>
               </div>
 
-              <p className="mt-3 text-xs text-gray-500">
-                ※ 「説明」ではなく「再生可能な記録（Trace）」として残します
-              </p>
+              <p className="mt-3 text-xs text-gray-500">※ 「説明」ではなく「再生可能な記録（Trace）」として残します</p>
             </>
           )}
         </section>
@@ -480,26 +485,48 @@ V: ${result.Trace.log.V}
   );
 }
 
+/** Input / Select 両対応の Field */
 function Field({
   label,
   value,
   placeholder,
   onChange,
+  type = "text",
+  options,
 }: {
   label: string;
   value: string;
-  placeholder: string;
+  placeholder?: string;
   onChange: (v: string) => void;
+  type?: "text" | "number";
+  options?: { label: string; value: string }[];
 }) {
   return (
     <label className="block">
       <div className="text-xs font-semibold text-gray-600">{label}</div>
-      <input
-        className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-200"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-      />
+
+      {options ? (
+        <select
+          className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-200 bg-white"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          <option value="">{placeholder ?? "選択してください"}</option>
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-200"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          inputMode={type === "number" ? "numeric" : undefined}
+        />
+      )}
     </label>
   );
 }
@@ -541,7 +568,6 @@ function Metric({
   );
 }
 
-
 function LoadingRow({ label, desc }: { label: string; desc: string }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
@@ -571,7 +597,6 @@ function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
     { key: "T", label: "Ǝ – Trace" },
   ];
 
-  // 生成中は E→V→Λ→Ǝ をループ表示
   const [idx, setIdx] = React.useState(0);
 
   React.useEffect(() => {
@@ -583,8 +608,7 @@ function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
     return () => clearInterval(t);
   }, [phase]);
 
-  const activeIndex =
-    phase === "idle" ? 0 : phase === "done" ? steps.length - 1 : idx;
+  const activeIndex = phase === "idle" ? 0 : phase === "done" ? steps.length - 1 : idx;
 
   return (
     <div className="mt-2 text-sm">
@@ -608,9 +632,7 @@ function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
                 {s.label}
               </span>
               {i < steps.length - 1 && (
-                <span className={active || passed ? "text-gray-400" : "text-gray-300"}>
-                  →
-                </span>
+                <span className={active || passed ? "text-gray-400" : "text-gray-300"}>→</span>
               )}
             </React.Fragment>
           );
