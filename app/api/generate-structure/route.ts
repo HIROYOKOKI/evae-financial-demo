@@ -1,3 +1,4 @@
+// app/api/generate-structure/route.ts
 import { NextResponse } from "next/server";
 
 type Payload = {
@@ -23,6 +24,8 @@ const POLICY = {
   ltiMax: 7,
   otherDebtMonthlyPct: 2,
 };
+
+type Bottleneck = "DTI" | "DOWN" | "LTI" | null;
 
 function round1(n: number) {
   return Math.round(n * 10) / 10;
@@ -50,6 +53,115 @@ function principalFromPaymentMan(paymentMan: number, annualRatePct: number, year
   return paymentMan * ((pow - 1) / (r * pow));
 }
 
+function pickBottleneck(dtiPct: number, downPct: number, lti: number): Bottleneck {
+  // gap: 0以上なら「超過/不足」、0未満なら「余裕」
+  const dtiGap = dtiPct - POLICY.dtiMaxPct; // >0 bad
+  const downGap = POLICY.downPaymentMinPct - downPct; // >0 bad
+  const ltiGap = lti - POLICY.ltiMax; // >0 bad
+
+  const bads: { k: Bottleneck; v: number }[] = [
+    { k: "DTI", v: dtiGap },
+    { k: "DOWN", v: downGap },
+    { k: "LTI", v: ltiGap },
+  ].filter((x) => x.v > 0);
+
+  if (bads.length === 0) return null;
+  bads.sort((a, b) => b.v - a.v);
+  return bads[0].k;
+}
+
+function buildPlans(params: {
+  incomeMan: number;
+  loanMan: number;
+  assetsMan: number;
+  otherDebtMan: number;
+  monthlyIncomeMan: number;
+  estMortgagePayMan: number;
+  estOtherDebtPayMan: number;
+  dtiPct: number;
+  downPaymentPct: number;
+  lti: number;
+  bottleneck: Bottleneck;
+  required: {
+    reduceLoanManForDTI: number;
+    increaseAssetsManForDownPayment: number;
+    reduceOtherDebtMan: number;
+  };
+}) {
+  const { bottleneck, required } = params;
+
+  const plans: Array<{ title: string; impact: string; steps: string[] }> = [];
+
+  // helper
+  const fmt = (n: number) => `${round1(Math.max(0, n))}万円`;
+
+  // Plan A: bottleneck first
+  if (bottleneck === "DOWN") {
+    plans.push({
+      title: "Plan A（最短）",
+      impact: "頭金比率を最低基準へ到達させる",
+      steps: [
+        `自己資金を +${fmt(required.increaseAssetsManForDownPayment)}`,
+        `（代替）申込金額を -${fmt(required.reduceLoanManForDTI)} ※DTI側も同時に改善する可能性`,
+      ],
+    });
+  } else if (bottleneck === "DTI") {
+    plans.push({
+      title: "Plan A（最短）",
+      impact: "DTIを上限内へ戻す",
+      steps: [
+        `申込金額を -${fmt(required.reduceLoanManForDTI)}`,
+        `（代替）他の借入を -${fmt(required.reduceOtherDebtMan)}（月返済負担を軽くする）`,
+      ],
+    });
+  } else if (bottleneck === "LTI") {
+    // LTIは「借入/年収」なので、借入減か年収増の2択
+    const reduceLoanForLTI = params.loanMan - POLICY.ltiMax * params.incomeMan;
+    plans.push({
+      title: "Plan A（最短）",
+      impact: "LTIを目安内へ戻す",
+      steps: [
+        `申込金額を -${fmt(reduceLoanForLTI)}`,
+        `（代替）年収を +${fmt(params.loanMan / POLICY.ltiMax - params.incomeMan)}（到達目安）`,
+      ],
+    });
+  } else {
+    // PASS時：余裕度を強化する提案（“戦略”）
+    plans.push({
+      title: "Plan A（余裕を増やす）",
+      impact: "将来変動（金利/生活費）に備えて余裕度を増やす",
+      steps: [
+        "頭金をもう1段積む（リスク低下・金利条件の改善余地）",
+        "他債務を圧縮してDTIの余裕を確保する",
+      ],
+    });
+  }
+
+  // Plan B: realistic balancing
+  plans.push({
+    title: "Plan B（現実）",
+    impact: "複数項目を少しずつ改善してリスクを分散",
+    steps: [
+      required.reduceLoanManForDTI > 0 ? `申込金額を -${fmt(required.reduceLoanManForDTI * 0.6)}` : "申込金額の微調整（レンジで再計算）",
+      required.increaseAssetsManForDownPayment > 0 ? `自己資金を +${fmt(required.increaseAssetsManForDownPayment * 0.6)}` : "自己資金の上積み（ボーナス等）",
+      required.reduceOtherDebtMan > 0 ? `他の借入を -${fmt(required.reduceOtherDebtMan * 0.6)}` : "他債務の支払計画を見直す",
+    ],
+  });
+
+  // Plan C: conservative
+  plans.push({
+    title: "Plan C（保守）",
+    impact: "前提を変えずに“条件”側で安全域を確保",
+    steps: [
+      "金利が上振れした場合（+0.5〜1.0%）で再計算する",
+      "返済期間・物件価格帯を見直して月返済の上限を固定する",
+      "実運用では勤続年数・貯蓄推移などを追加して精緻化する",
+    ],
+  });
+
+  return plans;
+}
+
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as Payload;
 
@@ -66,7 +178,7 @@ export async function POST(req: Request) {
   };
 
   const gateReasons: string[] = [];
-  const flags: string[] = [];
+  const softFlags: string[] = [];
 
   // --- Input validation gates ---
   if (E.incomeMan <= 0) gateReasons.push("年収が未入力/0のため、指標計算が成立しない");
@@ -96,13 +208,13 @@ export async function POST(req: Request) {
 
   // --- Soft flags (do not change result) ---
   if (typeof E.age === "number" && E.age > 0 && E.age + POLICY.years > 80) {
-    flags.push("完済時年齢が高い可能性（追加確認が必要）");
+    softFlags.push("完済時年齢が高い可能性（追加確認が必要）");
   }
   if (E.job && ["自営業", "契約/派遣", "パート/アルバイト"].includes(E.job)) {
-    flags.push("雇用形態により収入安定性の追加確認が必要（デモ）");
+    softFlags.push("雇用形態により収入安定性の追加確認が必要（デモ）");
   }
   if (E.family && E.family.includes("子")) {
-    flags.push("家族構成により生活費前提の精緻化余地（デモ）");
+    softFlags.push("家族構成により生活費前提の精緻化余地（デモ）");
   }
 
   const result = gateReasons.length > 0 ? "HOLD" : "PASS";
@@ -117,7 +229,6 @@ export async function POST(req: Request) {
     const allowMortgagePay = maxPayMan - estOtherDebtPayMan;
 
     if (allowMortgagePay <= 0) {
-      // need to reduce other debt so that (otherDebtPay) <= maxPayMan
       const needReducePay = estOtherDebtPayMan - maxPayMan;
       if (needReducePay > 0) {
         reduceOtherDebtMan = needReducePay / (POLICY.otherDebtMonthlyPct / 100);
@@ -133,13 +244,55 @@ export async function POST(req: Request) {
     if (inc > 0) increaseAssetsManForDownPayment = inc;
   }
 
+  const required = {
+    reduceLoanManForDTI: round1(Math.max(0, reduceLoanManForDTI)),
+    increaseAssetsManForDownPayment: round1(Math.max(0, increaseAssetsManForDownPayment)),
+    reduceOtherDebtMan: round1(Math.max(0, reduceOtherDebtMan)),
+  };
+
+  // --- headroom (PASSでも見せる：境界の可視化) ---
+  const headroom = {
+    dtiPct: round1(POLICY.dtiMaxPct - dtiPct), // +なら余裕、-なら超過
+    downPaymentPct: round1(downPaymentPct - POLICY.downPaymentMinPct), // +なら余裕、-なら不足
+    lti: round1(POLICY.ltiMax - lti), // +なら余裕、-なら超過
+  };
+
+  const bottleneck: Bottleneck = pickBottleneck(dtiPct, downPaymentPct, lti);
+
+  const plans = buildPlans({
+    incomeMan: E.incomeMan,
+    loanMan: E.loanRequestMan,
+    assetsMan: E.assetsMan,
+    otherDebtMan: E.otherDebtMan,
+    monthlyIncomeMan,
+    estMortgagePayMan,
+    estOtherDebtPayMan,
+    dtiPct,
+    downPaymentPct,
+    lti,
+    bottleneck,
+    required,
+  });
+
   const V = [
     "返済負担（DTI）・頭金比率・年収倍率（LTI）で、ルール判定の前提となる構造を数値化します。",
     "本デモは融資の可否を決定しません。Policy Gate の結果は「検討状態（PASS/HOLD）」として表示します。",
-    "HOLDの場合は、再検討に必要な調整案（借入額・自己資金・他債務）を概算で提示します。",
+    "PASSでも境界（しきい値）に対する余裕度を可視化し、再検討の論点として残します。",
   ];
 
   const traceId = `trace_${Date.now()}`;
+  const generatedAt = new Date().toISOString();
+
+  const traceLambda = {
+    ruleId: "MORTGAGE_STD_001",
+    result,
+    gateReasons,
+    softFlags,
+    bottleneck,
+    headroom,
+    policy: POLICY,
+    required,
+  };
 
   return NextResponse.json({
     V,
@@ -148,7 +301,15 @@ export async function POST(req: Request) {
       ruleId: "MORTGAGE_STD_001",
       result,
       note: "実行時の人介在なし（ルール確定）",
-      flags: [...gateReasons, ...flags],
+
+      // ✅ NEW
+      gateReasons,
+      bottleneck,
+      headroom,
+      plans,
+
+      // 既存互換
+      flags: [...gateReasons, ...softFlags],
       policy: {
         bank: POLICY.bank,
         dtiMaxPct: POLICY.dtiMaxPct,
@@ -165,36 +326,36 @@ export async function POST(req: Request) {
         downPaymentPct: round1(downPaymentPct),
         lti: round1(lti),
       },
-      required: {
-        reduceLoanManForDTI: round1(Math.max(0, reduceLoanManForDTI)),
-        increaseAssetsManForDownPayment: round1(Math.max(0, increaseAssetsManForDownPayment)),
-        reduceOtherDebtMan: round1(Math.max(0, reduceOtherDebtMan)),
-      },
+      required,
     },
     Trace: {
       reason:
         result === "PASS"
-          ? "主要指標がポリシー範囲内（ただし可否は決定しない）"
+          ? "主要指標がポリシー範囲内（ただし可否は決定しない）。余裕度はTraceとして固定。"
           : `ポリシーゲートにより再検討が必要：${gateReasons.join(" / ")}`,
       actions:
         result === "PASS"
-          ? ["金利条件や物件価格の変動を想定し、レンジでの再計算を行う", "実運用では審査情報（勤続年数等）を追加する"]
+          ? [
+              `余裕度：DTI +${headroom.dtiPct}% / 頭金 +${headroom.downPaymentPct}% / LTI +${headroom.lti}倍（境界に対する余裕）`,
+              "金利上振れ（+0.5〜1.0%）でも成立するかを再計算する",
+              "実運用では勤続年数・貯蓄推移等の追加で精緻化する",
+            ]
           : [
-              "DTI・頭金比率・LTIのどれがボトルネックかを分解し、1項目ずつ改善する",
-              "他債務を圧縮するか、自己資金を増やすか、申込金額を調整する",
+              "HOLD要因（ゲート理由）を最優先に改善する",
+              "Plan A/B/C に沿って、借入・自己資金・他債務のどれを動かすか決める",
             ],
       log: {
         E: JSON.stringify(E),
         V: JSON.stringify(V),
-        Lambda: JSON.stringify({ ruleId: "MORTGAGE_STD_001", result, gateReasons, flags, policy: POLICY }),
-        Trace: JSON.stringify({ traceId, generatedAt: new Date().toISOString() }),
+        Lambda: JSON.stringify(traceLambda),
+        Trace: JSON.stringify({ traceId, generatedAt }),
       },
     },
     meta: {
       model: "rule-based",
       visionNote: "論点生成のみ（可否判断なし）",
       traceId,
-      generatedAt: new Date().toISOString(),
+      generatedAt,
     },
   });
 }
