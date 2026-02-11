@@ -26,32 +26,7 @@ const POLICY = {
 };
 
 type Bottleneck = "DTI" | "DOWN" | "LTI" | null;
-
-function round1(n: number) {
-  return Math.round(n * 10) / 10;
-}
-function fin(n: any) {
-  const v = Number(n);
-  return Number.isFinite(v) ? v : 0;
-}
-
-function amortPaymentMan(principalMan: number, annualRatePct: number, years: number) {
-  const r = annualRatePct / 100 / 12;
-  const n = Math.max(1, Math.round(years * 12));
-  if (principalMan <= 0) return 0;
-  if (r === 0) return principalMan / n;
-  const pow = Math.pow(1 + r, n);
-  return (principalMan * r * pow) / (pow - 1);
-}
-
-function principalFromPaymentMan(paymentMan: number, annualRatePct: number, years: number) {
-  const r = annualRatePct / 100 / 12;
-  const n = Math.max(1, Math.round(years * 12));
-  if (paymentMan <= 0) return 0;
-  if (r === 0) return paymentMan * n;
-  const pow = Math.pow(1 + r, n);
-  return paymentMan * ((pow - 1) / (r * pow));
-}
+type BottleneckKey = Exclude<Bottleneck, null>;
 
 function pickBottleneck(dtiPct: number, downPct: number, lti: number): Bottleneck {
   // gap: 0以上なら「超過/不足」、0未満なら「余裕」
@@ -59,7 +34,7 @@ function pickBottleneck(dtiPct: number, downPct: number, lti: number): Bottlenec
   const downGap = POLICY.downPaymentMinPct - downPct; // >0 bad
   const ltiGap = lti - POLICY.ltiMax; // >0 bad
 
-  const bads: { k: Bottleneck; v: number }[] = [
+  const bads: { k: BottleneckKey; v: number }[] = [
     { k: "DTI", v: dtiGap },
     { k: "DOWN", v: downGap },
     { k: "LTI", v: ltiGap },
@@ -69,6 +44,7 @@ function pickBottleneck(dtiPct: number, downPct: number, lti: number): Bottlenec
   bads.sort((a, b) => b.v - a.v);
   return bads[0].k;
 }
+
 
 function buildPlans(params: {
   incomeMan: number;
