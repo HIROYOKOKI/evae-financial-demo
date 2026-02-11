@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 type FormState = {
   age: string;
@@ -27,9 +27,9 @@ type ApiResult = {
     gateReasons?: string[];
     bottleneck?: Bottleneck;
     headroom?: {
-      dtiPct?: number; // +余裕 / -超過
-      downPaymentPct?: number; // +余裕 / -不足
-      lti?: number; // +余裕 / -超過
+      dtiPct?: number;
+      downPaymentPct?: number;
+      lti?: number;
     };
     plans?: Array<{
       title: string;
@@ -89,6 +89,32 @@ const initialForm: FormState = {
   loanRequestMan: "",
 };
 
+const SECTION_STYLE = {
+  E: { bg: "rgba(255,21,0,0.06)", bar: "#FF1500" },
+  V: { bg: "rgba(9,104,255,0.06)", bar: "#0968FF" },
+  L: { bg: "rgba(132,204,22,0.08)", bar: "#84CC16" },
+  T: { bg: "rgba(184,51,245,0.06)", bar: "#B833F5" },
+} as const;
+
+const lambdaGlow = (isHold: boolean) => ({
+  boxShadow: isHold
+    ? "0 0 0 1px rgba(132,204,22,0.25), 0 10px 30px rgba(132,204,22,0.22), inset 0 0 0 1px rgba(132,204,22,0.15)"
+    : "0 0 0 1px rgba(0,0,0,0.04)",
+  backgroundColor: isHold ? "rgba(132,204,22,0.14)" : SECTION_STYLE.L.bg,
+});
+
+const traceGlow = (isPass: boolean) => ({
+  boxShadow: isPass
+    ? "0 0 0 1px rgba(184,51,245,0.18), 0 12px 30px rgba(184,51,245,0.14)"
+    : "0 0 0 1px rgba(0,0,0,0.04)",
+});
+
+type StepKey = "E" | "V" | "L" | "T";
+
+type VisId = "section-e" | "section-v" | "section-l" | "section-t" | "section-loading";
+
+type VisMap = Record<VisId, boolean>;
+
 /**
  * --- Demo metric model (client fallback) ---
  */
@@ -128,7 +154,8 @@ function calcDerivedMetrics(input: {
       ? ((estMortgagePayMan + estOtherDebtPayMan) / monthlyIncomeMan) * 100
       : 0;
 
-  const downPaymentPct = loanMan + assetsMan > 0 ? (assetsMan / (loanMan + assetsMan)) * 100 : 0;
+  const downPaymentPct =
+    loanMan + assetsMan > 0 ? (assetsMan / (loanMan + assetsMan)) * 100 : 0;
 
   const lti = incomeMan > 0 ? loanMan / incomeMan : 0;
 
@@ -151,8 +178,6 @@ function toFinite(v: any) {
   return Number.isFinite(n) ? n : 0;
 }
 
-type StepKey = "E" | "V" | "L" | "T";
-
 export default function Home() {
   const [form, setForm] = useState<FormState>(initialForm);
   const [isLoading, setIsLoading] = useState(false);
@@ -166,19 +191,44 @@ export default function Home() {
   // ✅ Stepper連動（スクロール同期）
   const [activeStep, setActiveStep] = useState<StepKey>("E");
 
+  const [visible, setVisible] = useState<VisMap>({
+    "section-e": true,
+    "section-v": false,
+    "section-l": false,
+    "section-t": false,
+    "section-loading": false,
+  });
+
   function scrollTo(step: StepKey) {
     const id =
-      step === "E" ? "section-e" : step === "V" ? "section-v" : step === "L" ? "section-l" : "section-t";
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      step === "E"
+        ? "section-e"
+        : step === "V"
+        ? "section-v"
+        : step === "L"
+        ? "section-l"
+        : "section-t";
+    document.getElementById(id)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   }
 
   useEffect(() => {
     const ids = ["section-e", "section-v", "section-l", "section-t"];
-    const els = ids.map((id) => document.getElementById(id)).filter(Boolean) as HTMLElement[];
+    const els = ids
+      .map((id) => document.getElementById(id))
+      .filter(Boolean) as HTMLElement[];
     if (els.length === 0) return;
 
     const keyFromId = (id: string): StepKey =>
-      id === "section-e" ? "E" : id === "section-v" ? "V" : id === "section-l" ? "L" : "T";
+      id === "section-e"
+        ? "E"
+        : id === "section-v"
+        ? "V"
+        : id === "section-l"
+        ? "L"
+        : "T";
 
     const io = new IntersectionObserver(
       (entries) => {
@@ -193,6 +243,35 @@ export default function Home() {
     els.forEach((el) => io.observe(el));
     return () => io.disconnect();
   }, []);
+
+  useEffect(() => {
+    const ids: VisId[] = [
+      "section-e",
+      "section-loading",
+      "section-v",
+      "section-l",
+      "section-t",
+    ];
+    const els = ids
+      .map((id) => document.getElementById(id))
+      .filter(Boolean) as HTMLElement[];
+    if (els.length === 0) return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            const id = e.target.id as VisId;
+            setVisible((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
+          }
+        }
+      },
+      { threshold: 0.18, rootMargin: "0px 0px -10% 0px" }
+    );
+
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [isLoading]);
 
   // --- dropdown options ---
   const ageOptions = Array.from({ length: 51 }, (_, i) => {
@@ -275,7 +354,10 @@ export default function Home() {
     } finally {
       setIsLoading(false);
       setTimeout(() => {
-        document.getElementById("section-v")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        document.getElementById("section-v")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
       }, 50);
     }
   }
@@ -322,13 +404,20 @@ export default function Home() {
   }, [result, form]);
 
   const decision = (result?.Lambda?.result as "HOLD" | "PASS" | null) ?? null;
+  const isHold = decision === "HOLD";
+  const isPass = decision === "PASS";
 
   return (
     <main className="min-h-screen" style={{ backgroundColor: "#FFFFFF" }}>
       {/* Header (sticky) */}
-      <header className="sticky top-0 z-10 border-b" style={{ backgroundColor: "rgba(255,255,255,0.90)" }}>
+      <header
+        className="sticky top-0 z-10 border-b"
+        style={{ backgroundColor: "rgba(255,255,255,0.90)" }}
+      >
         <div className="mx-auto max-w-4xl px-6 py-4">
-          <div className="text-xl font-semibold">EVΛƎ Framework / Design-by-Transparency</div>
+          <div className="text-xl font-semibold">
+            EVΛƎ Framework / Design-by-Transparency
+          </div>
 
           <FlowStepper
             phase={isLoading ? "generating" : result ? "done" : "idle"}
@@ -337,7 +426,9 @@ export default function Home() {
             decision={decision}
           />
 
-          <div className="mt-1 text-xs text-gray-500">※ 本デモでは、人は意思の起点（E）のみを与えます</div>
+          <div className="mt-1 text-xs text-gray-500">
+            ※ 本デモでは、人は意思の起点（E）のみを与えます
+          </div>
         </div>
       </header>
 
@@ -354,7 +445,14 @@ export default function Home() {
         </section>
 
         {/* E */}
-        <section id="section-e" className="rounded-xl border p-6">
+        <LayerSection
+          id="section-e"
+          visible={visible["section-e"]}
+          style={{
+            backgroundColor: SECTION_STYLE.E.bg,
+            borderLeft: `6px solid ${SECTION_STYLE.E.bar}`,
+          }}
+        >
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">E – Origin｜人間の判断の起点</h2>
             <span className="text-xs text-gray-500">Human input only</span>
@@ -362,17 +460,60 @@ export default function Home() {
 
           <p className="mt-2 text-sm text-gray-700">
             この入力は融資の可否を決定するものではありません。次のステップでは
-            <span className="font-semibold">「判断がどのような構造で検討されるか」</span>をAIが整理します。
+            <span className="font-semibold">「判断がどのような構造で検討されるか」</span>
+            をAIが整理します。
           </p>
 
           <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="年齢" value={form.age} placeholder="選択してください" options={ageOptions} onChange={(v) => setForm({ ...form, age: v })} />
-            <Field label="職業（選択式）" value={form.job} placeholder="選択してください" options={jobOptions} onChange={(v) => setForm({ ...form, job: v })} />
-            <Field label="年収（万円）" value={form.incomeMan} placeholder="例：650" type="number" onChange={(v) => setForm({ ...form, incomeMan: v })} />
-            <Field label="家族構成（簡易）" value={form.family} placeholder="選択してください" options={familyOptions} onChange={(v) => setForm({ ...form, family: v })} />
-            <Field label="自己資金（万円）" value={form.assetsMan} placeholder="例：400" type="number" onChange={(v) => setForm({ ...form, assetsMan: v })} />
-            <Field label="他の借入（万円）" value={form.otherDebtMan} placeholder="例：120" type="number" onChange={(v) => setForm({ ...form, otherDebtMan: v })} />
-            <Field label="申込金額（万円）" value={form.loanRequestMan} placeholder="例：3800" type="number" onChange={(v) => setForm({ ...form, loanRequestMan: v })} />
+            <Field
+              label="年齢"
+              value={form.age}
+              placeholder="選択してください"
+              options={ageOptions}
+              onChange={(v) => setForm({ ...form, age: v })}
+            />
+            <Field
+              label="職業（選択式）"
+              value={form.job}
+              placeholder="選択してください"
+              options={jobOptions}
+              onChange={(v) => setForm({ ...form, job: v })}
+            />
+            <Field
+              label="年収（万円）"
+              value={form.incomeMan}
+              placeholder="例：650"
+              type="number"
+              onChange={(v) => setForm({ ...form, incomeMan: v })}
+            />
+            <Field
+              label="家族構成（簡易）"
+              value={form.family}
+              placeholder="選択してください"
+              options={familyOptions}
+              onChange={(v) => setForm({ ...form, family: v })}
+            />
+            <Field
+              label="自己資金（万円）"
+              value={form.assetsMan}
+              placeholder="例：400"
+              type="number"
+              onChange={(v) => setForm({ ...form, assetsMan: v })}
+            />
+            <Field
+              label="他の借入（万円）"
+              value={form.otherDebtMan}
+              placeholder="例：120"
+              type="number"
+              onChange={(v) => setForm({ ...form, otherDebtMan: v })}
+            />
+            <Field
+              label="申込金額（万円）"
+              value={form.loanRequestMan}
+              placeholder="例：3800"
+              type="number"
+              onChange={(v) => setForm({ ...form, loanRequestMan: v })}
+            />
           </div>
 
           {showMetrics && (
@@ -385,9 +526,21 @@ export default function Home() {
               </div>
 
               <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Metric label="年収（月）" value={`${derived.monthlyIncomeMan || 0} 万円`} hint={`monthlyIncome = 年収 ÷ 12`} />
-                <Metric label="住宅ローン月返済（推定）" value={`${derived.estMortgagePayMan || 0} 万円`} hint={`固定金利・${years}年の簡易償却式（0%時は元本/回数）`} />
-                <Metric label="他借入月返済（推定）" value={`${derived.estOtherDebtPayMan || 0} 万円`} hint={`他債務（月） = 他債務 × 2%`} />
+                <Metric
+                  label="年収（月）"
+                  value={`${derived.monthlyIncomeMan || 0} 万円`}
+                  hint={`monthlyIncome = 年収 ÷ 12`}
+                />
+                <Metric
+                  label="住宅ローン月返済（推定）"
+                  value={`${derived.estMortgagePayMan || 0} 万円`}
+                  hint={`固定金利・${years}年の簡易償却式（0%時は元本/回数）`}
+                />
+                <Metric
+                  label="他借入月返済（推定）"
+                  value={`${derived.estOtherDebtPayMan || 0} 万円`}
+                  hint={`他債務（月） = 他債務 × 2%`}
+                />
 
                 <Metric
                   label="返済負担率 DTI"
@@ -411,24 +564,40 @@ export default function Home() {
                 />
               </div>
 
-              <div className="mt-3 text-xs text-gray-500">※ これは「判断」ではなく、Λ（ルール）の前提となる“計算可能な構造”の表示です</div>
+              <div className="mt-3 text-xs text-gray-500">
+                ※ これは「判断」ではなく、Λ（ルール）の前提となる“計算可能な構造”の表示です
+              </div>
             </div>
           )}
 
           <div className="mt-6 rounded-lg border bg-gray-50 p-4">
-            <div className="text-xs font-semibold text-gray-700">確認サイン（デモ）</div>
+            <div className="text-xs font-semibold text-gray-700">
+              確認サイン（デモ）
+            </div>
             <div className="mt-2 space-y-2 text-xs text-gray-700">
               <label className="flex items-start gap-2">
-                <input type="checkbox" checked={confirmTruth} onChange={(e) => setConfirmTruth(e.target.checked)} className="mt-0.5" />
+                <input
+                  type="checkbox"
+                  checked={confirmTruth}
+                  onChange={(e) => setConfirmTruth(e.target.checked)}
+                  className="mt-0.5"
+                />
                 入力内容が事実であることを確認しました
               </label>
 
               <label className="flex items-start gap-2">
-                <input type="checkbox" checked={confirmNoDecision} onChange={(e) => setConfirmNoDecision(e.target.checked)} className="mt-0.5" />
+                <input
+                  type="checkbox"
+                  checked={confirmNoDecision}
+                  onChange={(e) => setConfirmNoDecision(e.target.checked)}
+                  className="mt-0.5"
+                />
                 本デモは融資可否を決定しないことを理解しています
               </label>
 
-              <div className="pt-1 text-[11px] text-gray-500">※ 確認情報は Ǝトレース（記録）に含める想定です</div>
+              <div className="pt-1 text-[11px] text-gray-500">
+                ※ 確認情報は Ǝトレース（記録）に含める想定です
+              </div>
             </div>
           </div>
 
@@ -462,14 +631,29 @@ export default function Home() {
             {isLoading ? "生成中…" : "検討プロセスを表示する →"}
           </button>
 
-          {!canSubmit ? <div className="mt-2 text-xs text-gray-500">※ 入力＋確認サイン（2つ）で生成できます（デモ演出）</div> : null}
+          {!canSubmit ? (
+            <div className="mt-2 text-xs text-gray-500">
+              ※ 入力＋確認サイン（2つ）で生成できます（デモ演出）
+            </div>
+          ) : null}
 
-          {error && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-        </section>
+          {error && (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+        </LayerSection>
 
         {/* Loading */}
         {isLoading && (
-          <section className="rounded-xl border p-6">
+          <LayerSection
+            id="section-loading"
+            visible={visible["section-loading"]}
+            style={{
+              backgroundColor: SECTION_STYLE.V.bg,
+              borderLeft: `6px solid ${SECTION_STYLE.V.bar}`,
+            }}
+          >
             <h2 className="text-lg font-semibold">Generating…</h2>
             <p className="mt-2 text-sm text-gray-700">
               V（Vision）をAIが生成し、Λ（Choice）はルールで確定し、Ǝ（Trace）をログとして固定しています。
@@ -487,18 +671,31 @@ V: 生成中…
 Λ: Policy Gate (MORTGAGE_STD_001)
 Ǝ: 記録を固定中…`}</pre>
             </div>
-          </section>
+          </LayerSection>
         )}
 
         {/* V */}
-        <section id="section-v" className="rounded-xl border p-6">
+        <LayerSection
+          id="section-v"
+          visible={visible["section-v"]}
+          style={{
+            backgroundColor: SECTION_STYLE.V.bg,
+            borderLeft: `6px solid ${SECTION_STYLE.V.bar}`,
+          }}
+        >
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">V – Vision｜AIが提示する論点（判断しない）</h2>
-            <span className="text-xs text-gray-500">{result?.meta?.visionNote ? `(${result.meta.visionNote})` : "—"}</span>
+            <h2 className="text-lg font-semibold">
+              V – Vision｜AIが提示する論点（判断しない）
+            </h2>
+            <span className="text-xs text-gray-500">
+              {result?.meta?.visionNote ? `(${result.meta.visionNote})` : "—"}
+            </span>
           </div>
 
           {!result ? (
-            <p className="mt-3 text-sm text-gray-600">「検討プロセスを表示する」を押すと、ここにAI生成の論点が表示されます。</p>
+            <p className="mt-3 text-sm text-gray-600">
+              「検討プロセスを表示する」を押すと、ここにAI生成の論点が表示されます。
+            </p>
           ) : (
             <>
               <ul className="mt-3 space-y-2 text-sm text-gray-700 list-disc pl-5">
@@ -506,20 +703,34 @@ V: 生成中…
                   <li key={i}>{v}</li>
                 ))}
               </ul>
-              <p className="mt-3 text-xs text-gray-500">※ 可否の提示や数値断定は行いません（論点展開に限定）</p>
+              <p className="mt-3 text-xs text-gray-500">
+                ※ 可否の提示や数値断定は行いません（論点展開に限定）
+              </p>
             </>
           )}
-        </section>
+        </LayerSection>
 
         {/* Λ */}
-        <section id="section-l" className="rounded-xl border p-6">
+        <LayerSection
+          id="section-l"
+          visible={visible["section-l"]}
+          className="transition-all duration-300"
+          style={{
+            borderLeft: `${isHold ? 10 : 6}px solid ${SECTION_STYLE.L.bar}`,
+            ...(lambdaGlow(isHold)),
+          }}
+        >
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">Λ – Choice｜判断方法の確定（ルール）</h2>
+            <h2 className="text-lg font-semibold">
+              Λ – Choice｜判断方法の確定（ルール）
+            </h2>
             <span className="text-xs text-gray-500">Rule-based</span>
           </div>
 
           {!result ? (
-            <p className="mt-3 text-sm text-gray-600">生成後、ここに Policy Gate の結果（PASS / HOLD）が表示されます。</p>
+            <p className="mt-3 text-sm text-gray-600">
+              生成後、ここに Policy Gate の結果（PASS / HOLD）が表示されます。
+            </p>
           ) : (
             <>
               <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
@@ -532,13 +743,26 @@ V: 生成中…
               <div className="mt-4 rounded-lg bg-gray-50 p-4 text-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div className="font-semibold">数値サマリー（ルール計算）</div>
-                  {result?.Lambda?.policy?.bank && <div className="text-xs text-gray-500">{result.Lambda.policy.bank}</div>}
+                  {result?.Lambda?.policy?.bank && (
+                    <div className="text-xs text-gray-500">
+                      {result.Lambda.policy.bank}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Metric label="年収（月）" value={`${derived.monthlyIncomeMan || 0} 万円`} />
-                  <Metric label="住宅ローン月返済（推定）" value={`${derived.estMortgagePayMan || 0} 万円`} />
-                  <Metric label="他借入月返済（推定）" value={`${derived.estOtherDebtPayMan || 0} 万円`} />
+                  <Metric
+                    label="年収（月）"
+                    value={`${derived.monthlyIncomeMan || 0} 万円`}
+                  />
+                  <Metric
+                    label="住宅ローン月返済（推定）"
+                    value={`${derived.estMortgagePayMan || 0} 万円`}
+                  />
+                  <Metric
+                    label="他借入月返済（推定）"
+                    value={`${derived.estOtherDebtPayMan || 0} 万円`}
+                  />
 
                   <Metric
                     label="返済負担率 DTI"
@@ -570,38 +794,54 @@ V: 生成中…
               {/* ✅ HOLD時の見せ方最適化 */}
               {decision === "HOLD" && (
                 <div className="mt-4 rounded-lg border p-4 text-sm">
-                  <div className="text-xs font-semibold" style={{ color: "#FF1500" }}>
+                  <div
+                    className="text-xs font-semibold"
+                    style={{ color: "#FF1500" }}
+                  >
                     HOLD（再検討が必要）
                   </div>
 
-                  {result.Lambda.gateReasons && result.Lambda.gateReasons.length > 0 && (
-                    <div className="mt-3">
-                      <div className="text-xs font-semibold text-gray-600">HOLD要因（ゲート理由）</div>
-                      <ul className="mt-2 list-disc pl-5 space-y-1 text-gray-800">
-                        {result.Lambda.gateReasons.map((r, i) => (
-                          <li key={i}>{r}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  {result.Lambda.gateReasons &&
+                    result.Lambda.gateReasons.length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-xs font-semibold text-gray-600">
+                          HOLD要因（ゲート理由）
+                        </div>
+                        <ul className="mt-2 list-disc pl-5 space-y-1 text-gray-800">
+                          {result.Lambda.gateReasons.map((r, i) => (
+                            <li key={i}>{r}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
                   {result.Lambda.bottleneck && (
                     <div className="mt-3 text-sm">
-                      <span className="text-xs font-semibold text-gray-600">ボトルネック：</span>
+                      <span className="text-xs font-semibold text-gray-600">
+                        ボトルネック：
+                      </span>
                       <span className="font-bold">
-                        {result.Lambda.bottleneck === "DTI" ? "DTI（返済負担）" : result.Lambda.bottleneck === "DOWN" ? "頭金比率" : "LTI（年収倍率）"}
+                        {result.Lambda.bottleneck === "DTI"
+                          ? "DTI（返済負担）"
+                          : result.Lambda.bottleneck === "DOWN"
+                          ? "頭金比率"
+                          : "LTI（年収倍率）"}
                       </span>
                     </div>
                   )}
 
                   {result.Lambda.plans && result.Lambda.plans.length > 0 && (
                     <div className="mt-4">
-                      <div className="text-xs font-semibold text-gray-600">改善プラン（Plan A/B/C）</div>
+                      <div className="text-xs font-semibold text-gray-600">
+                        改善プラン（Plan A/B/C）
+                      </div>
                       <div className="mt-2 space-y-3">
                         {result.Lambda.plans.map((p, i) => (
                           <div key={i} className="rounded-lg bg-gray-50 p-3">
                             <div className="font-semibold">{p.title}</div>
-                            <div className="mt-1 text-xs text-gray-600">{p.impact}</div>
+                            <div className="mt-1 text-xs text-gray-600">
+                              {p.impact}
+                            </div>
                             <ul className="mt-2 list-disc pl-5 space-y-1 text-sm text-gray-800">
                               {p.steps.map((s, j) => (
                                 <li key={j}>{s}</li>
@@ -615,78 +855,133 @@ V: 生成中…
                 </div>
               )}
 
-              {/* 互換：flagsは残しつつ、HOLD表示はgateReasons優先 */}
-              {result.Lambda.flags && result.Lambda.flags.length > 0 && decision !== "HOLD" && (
-                <div className="mt-4 rounded-lg bg-gray-50 p-4 text-sm text-gray-800">
-                  <div className="text-xs font-semibold text-gray-600">メモ（ルール側）</div>
-                  <ul className="mt-2 list-disc pl-5 space-y-1">
-                    {result.Lambda.flags.map((f, i) => (
-                      <li key={i}>{f}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* ✅ PASSでも余裕度可視化（余裕度バー） */}
               {decision === "PASS" && result.Lambda.headroom && (
                 <div className="mt-4 rounded-lg border p-4 text-sm">
-                  <div className="text-xs font-semibold text-gray-600">余裕度（境界に対する余白）</div>
-                  <div className="mt-3 space-y-3">
-                    <HeadroomBar label="DTI余裕" value={result.Lambda.headroom.dtiPct ?? 0} unit="%" color="#0968FF" warnColor="#FF1500" />
-                    <HeadroomBar label="頭金余裕" value={result.Lambda.headroom.downPaymentPct ?? 0} unit="%" color="#0968FF" warnColor="#FF1500" />
-                    <HeadroomBar label="LTI余裕" value={result.Lambda.headroom.lti ?? 0} unit="倍" color="#0968FF" warnColor="#FF1500" />
+                  <div className="text-xs font-semibold text-gray-600">
+                    余裕度（境界に対する余白）
                   </div>
-                  <div className="mt-2 text-[11px] text-gray-500">※ プラスが余裕、マイナスが不足/超過</div>
+                  <div className="mt-3 space-y-3">
+                    <HeadroomBar
+                      label="DTI余裕"
+                      value={result.Lambda.headroom.dtiPct ?? 0}
+                      unit="%"
+                      color="#0968FF"
+                      warnColor="#FF1500"
+                    />
+                    <HeadroomBar
+                      label="頭金余裕"
+                      value={result.Lambda.headroom.downPaymentPct ?? 0}
+                      unit="%"
+                      color="#0968FF"
+                      warnColor="#FF1500"
+                    />
+                    <HeadroomBar
+                      label="LTI余裕"
+                      value={result.Lambda.headroom.lti ?? 0}
+                      unit="倍"
+                      color="#0968FF"
+                      warnColor="#FF1500"
+                    />
+                  </div>
+                  <div className="mt-2 text-[11px] text-gray-500">
+                    ※ プラスが余裕、マイナスが不足/超過
+                  </div>
                 </div>
               )}
 
-              <p className="mt-3 text-xs text-gray-500">※ ΛはLLMではなく、事前定義ルールで確定します（実行時の人介在しません）</p>
+              <p className="mt-3 text-xs text-gray-500">
+                ※ ΛはLLMではなく、事前定義ルールで確定します（実行時の人介在しません）
+              </p>
             </>
           )}
-        </section>
+        </LayerSection>
 
         {/* Ǝ */}
-        <section id="section-t" className="rounded-xl border p-6">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">Ǝ – Trace｜判断理由と責任の記録</h2>
-            <span className="text-xs text-gray-500">Reproducible log</span>
-          </div>
+        <LayerSection
+          id="section-t"
+          visible={visible["section-t"]}
+          className="relative overflow-hidden"
+          style={{
+            backgroundColor: SECTION_STYLE.T.bg,
+            borderLeft: `6px solid ${SECTION_STYLE.T.bar}`,
+            backdropFilter: "blur(10px)",
+            WebkitBackdropFilter: "blur(10px)",
+            ...(traceGlow(isPass)),
+          }}
+        >
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              background:
+                "linear-gradient(135deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.06) 35%, rgba(255,255,255,0) 60%)",
+            }}
+          />
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: 0,
+              height: 1,
+              pointerEvents: "none",
+              background: "rgba(255,255,255,0.35)",
+            }}
+          />
 
-          {!result ? (
-            <p className="mt-3 text-sm text-gray-600">生成後、ここに「説明ではない」Trace（再生可能な記録）が表示されます。</p>
-          ) : (
-            <>
-              <div className="mt-4 space-y-3 text-sm text-gray-700">
-                <div>
-                  <div className="font-semibold">判断理由（要約）</div>
-                  <div className="mt-1">{result.Trace.reason}</div>
-                </div>
+          <div style={{ position: "relative" }}>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">
+                Ǝ – Trace｜判断理由と責任の記録
+              </h2>
+              <span className="text-xs text-gray-500">Reproducible log</span>
+            </div>
 
-                <div>
-                  <div className="font-semibold">再検討のための条件例</div>
-                  <ul className="mt-1 list-disc pl-5 space-y-1">
-                    {result.Trace.actions.map((a, i) => (
-                      <li key={i}>{a}</li>
-                    ))}
-                  </ul>
-                </div>
+            {!result ? (
+              <p className="mt-3 text-sm text-gray-600">
+                生成後、ここに「説明ではない」Trace（再生可能な記録）が表示されます。
+              </p>
+            ) : (
+              <>
+                <div className="mt-4 space-y-3 text-sm text-gray-700">
+                  <div>
+                    <div className="font-semibold">判断理由（要約）</div>
+                    <div className="mt-1">{result.Trace.reason}</div>
+                  </div>
 
-                <div className="rounded-lg bg-gray-50 p-4 text-xs text-gray-800">
-                  <pre className="whitespace-pre-wrap">{`E: ${result.Trace.log.E}
+                  <div>
+                    <div className="font-semibold">再検討のための条件例</div>
+                    <ul className="mt-1 list-disc pl-5 space-y-1">
+                      {result.Trace.actions.map((a, i) => (
+                        <li key={i}>{a}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="rounded-lg bg-gray-50 p-4 text-xs text-gray-800">
+                    <pre className="whitespace-pre-wrap">{`E: ${result.Trace.log.E}
 V: ${result.Trace.log.V}
 Λ: ${result.Trace.log.Lambda}
 Ǝ: ${result.Trace.log.Trace}`}</pre>
+                  </div>
                 </div>
-              </div>
 
-              <div className="mt-4 rounded-lg border p-4 text-sm">
-                <div className="mt-1 text-gray-700">Ǝトレースが存在する限り、このAIはブラックボックスになりません。</div>
-              </div>
+                <div className="mt-4 rounded-lg border p-4 text-sm">
+                  <div className="mt-1 text-gray-700">
+                    Ǝトレースが存在する限り、このAIはブラックボックスになりません。
+                  </div>
+                </div>
 
-              <p className="mt-3 text-xs text-gray-500">※ 「説明」ではなく「再生可能な記録（Trace）」として残します</p>
-            </>
-          )}
-        </section>
+                <p className="mt-3 text-xs text-gray-500">
+                  ※ 「説明」ではなく「再生可能な記録（Trace）」として残します
+                </p>
+              </>
+            )}
+          </div>
+        </LayerSection>
 
         <footer className="py-4 text-center text-sm text-gray-600">
           このデモは、金融AIが判断をブラックボックスにしない設計が可能であることを示します。
@@ -696,7 +991,6 @@ V: ${result.Trace.log.V}
   );
 }
 
-/** Field */
 function Field({
   label,
   value,
@@ -815,14 +1109,17 @@ function HeadroomBar({
   warnColor: string;
 }) {
   const ok = value >= 0;
-  const abs = Math.min(100, Math.abs(value)); // 見た目の上限（安全）
+  const abs = Math.min(100, Math.abs(value));
   const w = `${abs}%`;
 
   return (
     <div className="rounded-lg border p-3">
       <div className="flex items-center justify-between">
         <div className="text-xs font-semibold text-gray-700">{label}</div>
-        <div className="text-xs font-semibold" style={{ color: ok ? color : warnColor }}>
+        <div
+          className="text-xs font-semibold"
+          style={{ color: ok ? color : warnColor }}
+        >
           {round1(value)}
           {unit}
         </div>
@@ -835,7 +1132,9 @@ function HeadroomBar({
         />
       </div>
 
-      <div className="mt-1 text-[11px] text-gray-500">{ok ? "余裕" : "不足/超過"}</div>
+      <div className="mt-1 text-[11px] text-gray-500">
+        {ok ? "余裕" : "不足/超過"}
+      </div>
     </div>
   );
 }
@@ -854,7 +1153,10 @@ function LoadingRow({ label, desc }: { label: string; desc: string }) {
 
 function Spinner() {
   return (
-    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" aria-label="loading" />
+    <div
+      className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"
+      aria-label="loading"
+    />
   );
 }
 
@@ -876,17 +1178,18 @@ function FlowStepper({
     { key: "T", label: "Ǝ – Trace", color: "#B833F5" },
   ];
 
-  const [idx, setIdx] = React.useState(0);
+  const [idx, setIdx] = useState(0);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (phase !== "generating") return;
     setIdx(0);
     const t = setInterval(() => setIdx((v) => (v + 1) % steps.length), 500);
     return () => clearInterval(t);
-  }, [phase]);
+  }, [phase, steps.length]);
 
-  const defaultActive = phase === "idle" ? "E" : phase === "done" ? "T" : steps[idx].key;
-  const showActive = phase === "generating" ? defaultActive : activeStep;
+  const defaultActive: StepKey =
+    phase === "idle" ? "E" : phase === "done" ? "T" : steps[idx].key;
+  const showActive: StepKey = phase === "generating" ? defaultActive : activeStep;
 
   return (
     <div className="mt-2 text-sm">
@@ -894,7 +1197,6 @@ function FlowStepper({
         {steps.map((s, i) => {
           const isActive = s.key === showActive;
 
-          // ✅ 結果連動の強発光
           const isStrong =
             decision === "HOLD"
               ? s.key === "L" || s.key === "T"
@@ -902,7 +1204,7 @@ function FlowStepper({
               ? s.key === "T"
               : false;
 
-          const style = isStrong
+          const style: React.CSSProperties = isStrong
             ? {
                 backgroundColor: s.color,
                 color: "#fff",
@@ -937,5 +1239,33 @@ function FlowStepper({
         )}
       </div>
     </div>
+  );
+}
+
+function LayerSection({
+  id,
+  visible,
+  children,
+  style,
+  className = "",
+}: {
+  id: string;
+  visible: boolean;
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+  className?: string;
+}) {
+  return (
+    <section
+      id={id}
+      className={`rounded-xl border p-6 transition-all duration-500 ease-out ${className}`}
+      style={{
+        ...style,
+        opacity: visible ? 1 : 0,
+        transform: visible ? "translateY(0px)" : "translateY(10px)",
+      }}
+    >
+      {children}
+    </section>
   );
 }
