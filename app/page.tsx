@@ -462,7 +462,7 @@ V: 生成中…
                 </div>
               )}
 
-              <p className="mt-3 text-xs text-gray-500">※ ΛはLLMではなく、事前定義ルールで確定します（実行時に人は介在しません）</p>
+              <p className="mt-3 text-xs text-gray-500">※ ΛはLLMではなく、事前定義ルールで確定します（実行時の人介在しません）</p>
             </>
           )}
         </section>
@@ -502,19 +502,31 @@ V: 生成中…
 
                     <ul className="mt-3 list-disc pl-5 space-y-1 text-gray-700">
                       {(result.Lambda.required.reduceLoanManForDTI ?? 0) > 0 && (
-                        <li>申込金額を約 {result.Lambda.required.reduceLoanManForDTI} 万円下げる（DTI目標に近づける）</li>
+                        <li>
+                          申込金額を約 {result.Lambda.required.reduceLoanManForDTI} 万円下げる（DTI目標に近づける）
+                        </li>
                       )}
+
                       {(result.Lambda.required.increaseAssetsManForDownPayment ?? 0) > 0 && (
-                        <li>自己資金を約 {result.Lambda.required.increaseAssetsManForDownPayment} 万円増やす（頭金目標に近づける）</li>
+                        <li>
+                          自己資金を約 {result.Lambda.required.increaseAssetsManForDownPayment} 万円増やす（頭金目標に近づける）
+                        </li>
                       )}
+
                       {(result.Lambda.required.reduceOtherDebtMan ?? 0) > 0 && (
-                        <li>他の借入を約 {result.Lambda.required.reduceOtherDebtMan} 万円圧縮する（比率上限に近づける）</li>
+                        <li>
+                          他の借入を約 {result.Lambda.required.reduceOtherDebtMan} 万円圧縮する（比率上限に近づける）
+                        </li>
                       )}
-                      (result.Lambda.required.reduceLoanManForDTI ?? 0) <= 0 &&
+
+                      {/* ✅ 修正ポイント：条件は必ず { (cond) && (<li/>) } で包む */}
+                      {(
+                        (result.Lambda.required.reduceLoanManForDTI ?? 0) <= 0 &&
                         (result.Lambda.required.increaseAssetsManForDownPayment ?? 0) <= 0 &&
-                        (result.Lambda.required.reduceOtherDebtMan ?? 0) <= 0 && (
-                          <li>現条件では主要指標はポリシー範囲内（ただし可否は決定しない）</li>
-                        )}
+                        (result.Lambda.required.reduceOtherDebtMan ?? 0) <= 0
+                      ) && (
+                        <li>現条件では主要指標はポリシー範囲内（ただし可否は決定しない）</li>
+                      )}
                     </ul>
                   </div>
                 )}
@@ -642,7 +654,9 @@ function LoadingRow({ label, desc }: { label: string; desc: string }) {
 }
 
 function Spinner() {
-  return <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" aria-label="loading" />;
+  return (
+    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" aria-label="loading" />
+  );
 }
 
 function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
