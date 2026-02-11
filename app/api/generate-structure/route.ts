@@ -74,7 +74,8 @@ function buildPlans(params: {
   const plans: Array<{ title: string; impact: string; steps: string[] }> = [];
 
   // helper
-  const fmt = (n: number) => `${round1(Math.max(0, n))}万円`;
+const fmt = (n: number) => `${round1(Math.max(0, n))}万円`;
+
 
   // Plan A: bottleneck first
   if (bottleneck === "DOWN") {
