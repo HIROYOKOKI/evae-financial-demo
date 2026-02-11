@@ -54,14 +54,6 @@ type ApiResult = {
       Lambda: string;
       Trace: string;
     };
-
-    // ✅ デモ用：確認サイン（軽量）
-    confirmed?: boolean;
-    confirmedAt?: string; // ISO
-    confirmText?: {
-      truth?: string;
-      noDecision?: string;
-    };
   };
   meta?: {
     model?: string;
@@ -119,18 +111,17 @@ export default function Home() {
     { label: "その他", value: "その他" },
   ];
 
-  // ✅ 最低1つ入力があるか（デモの「反応しない」を避ける）
+  // ✅ 入力が何もないと「押せない」方がデモとして自然
   const hasAnyInput = useMemo(() => {
     return Object.values(form).some((v) => String(v ?? "").trim().length > 0);
   }, [form]);
 
   const canSubmit = useMemo(() => {
-    // ✅ 生成には「何か入力」＋「確認サイン2つ」必須
+    // ✅ 生成には「入力あり」＋「確認サイン2つ」必須（デモ演出）
     return !isLoading && hasAnyInput && confirmTruth && confirmNoDecision;
   }, [isLoading, hasAnyInput, confirmTruth, confirmNoDecision]);
 
   async function onGenerate() {
-    // ✅ 念のためガード（disabledでも何らかで呼ばれた時に安全）
     if (!canSubmit) return;
 
     setError(null);
@@ -149,7 +140,7 @@ export default function Home() {
         otherDebtMan: form.otherDebtMan ? Number(form.otherDebtMan) : undefined,
         loanRequestMan: form.loanRequestMan ? Number(form.loanRequestMan) : undefined,
 
-        // ✅ デモ用：確認サイン情報（API側でTraceに詰めて返すと表示が確実）
+        // デモ演出用（サーバー側が使わなくてもOK）
         userConfirmed: true,
         confirmedAt,
         confirmText: {
@@ -183,11 +174,7 @@ export default function Home() {
 
   const dtiMax = result?.Lambda?.policy?.dtiMaxPct ?? 35;
   const downMin = result?.Lambda?.policy?.downPaymentMinPct ?? 10;
-  const ltiMax = 7; // 今のPolicyGateと合わせる（デモ固定）
-
-  // ✅ ボタン色
-  const BTN_BASE = "#FF4500";
-  const BTN_HOVER = "#E63E00";
+  const ltiMax = 7; // デモ固定
 
   return (
     <main className="min-h-screen bg-white">
@@ -266,6 +253,7 @@ export default function Home() {
               type="number"
               onChange={(v) => setForm({ ...form, assetsMan: v })}
             />
+
             <Field
               label="他の借入（万円）"
               value={form.otherDebtMan}
@@ -273,6 +261,7 @@ export default function Home() {
               type="number"
               onChange={(v) => setForm({ ...form, otherDebtMan: v })}
             />
+
             <Field
               label="申込金額（万円）"
               value={form.loanRequestMan}
@@ -285,80 +274,67 @@ export default function Home() {
           {/* ✅ 確認サイン（軽量） */}
           <div className="mt-6 rounded-lg border bg-gray-50 p-4">
             <div className="text-xs font-semibold text-gray-700">確認サイン（デモ）</div>
-
             <div className="mt-2 space-y-2 text-xs text-gray-700">
-              <div className="flex items-start gap-2">
+              <label className="flex items-start gap-2">
                 <input
-                  id="confirm-truth"
                   type="checkbox"
                   checked={confirmTruth}
                   onChange={(e) => setConfirmTruth(e.target.checked)}
                   className="mt-0.5"
                 />
-                <label htmlFor="confirm-truth" className="cursor-pointer select-none">
-                  入力内容が事実であることを確認しました
-                </label>
-              </div>
+                入力内容が事実であることを確認しました
+              </label>
 
-              <div className="flex items-start gap-2">
+              <label className="flex items-start gap-2">
                 <input
-                  id="confirm-nodecision"
                   type="checkbox"
                   checked={confirmNoDecision}
                   onChange={(e) => setConfirmNoDecision(e.target.checked)}
                   className="mt-0.5"
                 />
-                <label htmlFor="confirm-nodecision" className="cursor-pointer select-none">
-                  本デモは融資可否を決定しないことを理解しています
-                </label>
-              </div>
+                本デモは融資可否を決定しないことを理解しています
+              </label>
 
               <div className="pt-1 text-[11px] text-gray-500">※ 確認情報は Ǝトレース（記録）に含める想定です</div>
             </div>
           </div>
 
-          {/* ✅ 起動ボタン（Eカラー＋押下感＋ホバー） */}
-         <button
-  disabled={!canSubmit}
-  onClick={onGenerate}
-  className="
-    mt-6 w-full rounded-lg px-4 py-3 text-sm font-semibold
-    transition-all duration-150 ease-out
-    active:scale-[0.98]
-  "
-  style={{
-    backgroundColor: canSubmit ? "#EA580C" : "#E5E7EB", // 有効:オレンジ / 無効:グレー
-    color: canSubmit ? "#ffffff" : "#9CA3AF",
-    boxShadow: canSubmit
-      ? "0 4px 14px rgba(234,88,12,0.35)"
-      : "none",
-    cursor: canSubmit ? "pointer" : "not-allowed",
-  }}
-  onMouseEnter={(e) => {
-    if (!canSubmit) return;
-    e.currentTarget.style.backgroundColor = "#C2410C";
-    e.currentTarget.style.boxShadow = "0 6px 18px rgba(234,88,12,0.45)";
-    e.currentTarget.style.transform = "translateY(-1px)";
-  }}
-  onMouseLeave={(e) => {
-    if (!canSubmit) return;
-    e.currentTarget.style.backgroundColor = "#EA580C";
-    e.currentTarget.style.boxShadow = "0 4px 14px rgba(234,88,12,0.35)";
-    e.currentTarget.style.transform = "translateY(0px)";
-  }}
->
-  {isLoading ? "生成中…" : "検討プロセスを表示する →"}
-</button>
+          {/* ✅ 起動ボタン（Eカラー＋押した感＋ホバー） */}
+          <button
+            disabled={!canSubmit}
+            onClick={onGenerate}
+            className="
+              mt-6 w-full rounded-lg px-4 py-3 text-sm font-semibold
+              transition-all duration-150 ease-out
+              disabled:opacity-50 disabled:cursor-not-allowed
+              active:scale-[0.98]
+            "
+            style={{
+              backgroundColor: "#FF4500",
+              color: "#ffffff",
+              boxShadow: "0 4px 14px rgba(255,69,0,0.30)",
+              transform: "translateY(0px)",
+            }}
+            onMouseEnter={(e) => {
+              if (!canSubmit) return;
+              e.currentTarget.style.backgroundColor = "#E63E00";
+              e.currentTarget.style.boxShadow = "0 6px 18px rgba(255,69,0,0.45)";
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "#FF4500";
+              e.currentTarget.style.boxShadow = "0 4px 14px rgba(255,69,0,0.30)";
+              e.currentTarget.style.transform = "translateY(0px)";
+            }}
+          >
+            {isLoading ? "生成中…" : "判断構造を生成する →"}
+          </button>
 
-
-          {/* ✅ 何が足りないか表示（デモの体験を壊さない） */}
-          {!canSubmit && (
-            <div className="mt-2 text-xs text-gray-500 space-y-1">
-              {!hasAnyInput && <div>※ まずはどれか1つ入力してください</div>}
-              {!confirmTruth && <div>※ 「入力内容が事実であること」を確認してください</div>}
-              {!confirmNoDecision && <div>※ 「可否を決定しないこと」を確認してください</div>}
+          {!canSubmit ? (
+            <div className="mt-2 text-xs text-gray-500">
+              ※ 入力＋確認サイン（2つ）で生成できます（デモ演出）
             </div>
-          )}
+          ) : null}
 
           {error && (
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
@@ -392,9 +368,7 @@ V: 生成中…
         <section id="section-v" className="rounded-xl border p-6">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">V – Vision｜AIが提示する論点（判断しない）</h2>
-            <span className="text-xs text-gray-500">
-              {result?.meta?.visionNote ? `(${result.meta.visionNote})` : "—"}
-            </span>
+            <span className="text-xs text-gray-500">{result?.meta?.visionNote ? `(${result.meta.visionNote})` : "—"}</span>
           </div>
 
           {!result ? (
@@ -429,6 +403,7 @@ V: 生成中…
                 <Info label="実行時の人介在" value={result.Lambda.note ?? "なし"} />
               </div>
 
+              {/* 数値サマリー */}
               {result?.Lambda?.metrics && (
                 <div className="mt-4 rounded-lg bg-gray-50 p-4 text-sm">
                   <div className="flex items-start justify-between gap-3">
@@ -469,8 +444,8 @@ V: 生成中…
                     result?.Lambda?.policy?.years) && (
                     <div className="mt-3 text-xs text-gray-600">
                       ポリシー：DTI上限 {result.Lambda.policy?.dtiMaxPct ?? "-"}% / 頭金最低{" "}
-                      {result.Lambda.policy?.downPaymentMinPct ?? "-"}% / 金利{" "}
-                      {result.Lambda.policy?.annualRatePct ?? "-"}% / 期間 {result.Lambda.policy?.years ?? "-"}年
+                      {result.Lambda.policy?.downPaymentMinPct ?? "-"}% / 金利 {result.Lambda.policy?.annualRatePct ?? "-"}% / 期間{" "}
+                      {result.Lambda.policy?.years ?? "-"}年
                     </div>
                   )}
                 </div>
@@ -530,14 +505,12 @@ V: 生成中…
                         <li>申込金額を約 {result.Lambda.required.reduceLoanManForDTI} 万円下げる（DTI目標に近づける）</li>
                       )}
                       {(result.Lambda.required.increaseAssetsManForDownPayment ?? 0) > 0 && (
-                        <li>
-                          自己資金を約 {result.Lambda.required.increaseAssetsManForDownPayment} 万円増やす（頭金目標に近づける）
-                        </li>
+                        <li>自己資金を約 {result.Lambda.required.increaseAssetsManForDownPayment} 万円増やす（頭金目標に近づける）</li>
                       )}
                       {(result.Lambda.required.reduceOtherDebtMan ?? 0) > 0 && (
                         <li>他の借入を約 {result.Lambda.required.reduceOtherDebtMan} 万円圧縮する（比率上限に近づける）</li>
                       )}
-                      {(result.Lambda.required.reduceLoanManForDTI ?? 0) <= 0 &&
+                      (result.Lambda.required.reduceLoanManForDTI ?? 0) <= 0 &&
                         (result.Lambda.required.increaseAssetsManForDownPayment ?? 0) <= 0 &&
                         (result.Lambda.required.reduceOtherDebtMan ?? 0) <= 0 && (
                           <li>現条件では主要指標はポリシー範囲内（ただし可否は決定しない）</li>
@@ -551,19 +524,11 @@ V: 生成中…
 V: ${result.Trace.log.V}
 Λ: ${result.Trace.log.Lambda}
 Ǝ: ${result.Trace.log.Trace}`}</pre>
-
-                  <div className="mt-3 border-t pt-3 text-[11px] text-gray-600">
-                    <div className="font-semibold text-gray-700">User Confirmation (Demo)</div>
-                    <div className="mt-1">Status: {result.Trace.confirmed ? "confirmed" : "—"}</div>
-                    <div>Confirmed At: {result.Trace.confirmedAt ?? "—"}</div>
-                    {result.meta?.traceId && <div>Trace ID: {result.meta.traceId}</div>}
-                    {result.meta?.generatedAt && <div>Generated At: {result.meta.generatedAt}</div>}
-                  </div>
                 </div>
               </div>
 
               <div className="mt-4 rounded-lg border p-4 text-sm">
-                <div className="font-semibold">　</div>
+                <div className="font-semibold">決め台詞</div>
                 <div className="mt-1 text-gray-700">Ǝトレースが存在する限り、このAIはブラックボックスになりません。</div>
               </div>
 
@@ -647,32 +612,19 @@ function Metric({
   tone?: "neutral" | "warn" | "good";
   hint?: string;
 }) {
+  // Tailwind purge対策：色は inline style
   const styles =
     tone === "warn"
-      ? {
-          backgroundColor: "#F97316",
-          borderColor: "#EA580C",
-          boxShadow: "0 6px 16px rgba(249,115,22,0.35)",
-          color: "#FFFFFF",
-        }
+      ? { backgroundColor: "#FFF7ED", borderColor: "#FDBA74" } // orange
       : tone === "good"
-      ? {
-          backgroundColor: "#2563EB",
-          borderColor: "#1D4ED8",
-          boxShadow: "0 6px 16px rgba(37,99,235,0.35)",
-          color: "#FFFFFF",
-        }
-      : {
-          backgroundColor: "#FFFFFF",
-          borderColor: "#E5E7EB",
-          color: "#111827",
-        };
+      ? { backgroundColor: "#ECFDF5", borderColor: "#6EE7B7" } // green
+      : { backgroundColor: "#FFFFFF", borderColor: "#E5E7EB" }; // neutral
 
   return (
-    <div className="rounded-lg border-2 p-3 transition-all duration-150" style={styles} title={hint ?? ""}>
-      <div className="text-xs font-semibold opacity-90">{label}</div>
-      <div className="mt-1 font-semibold text-base">{value}</div>
-      {hint && <div className="mt-1 text-[11px] opacity-80">ⓘ 式/根拠（hover）</div>}
+    <div className="rounded-lg border p-3" style={styles} title={hint ?? ""}>
+      <div className="text-xs font-semibold text-gray-600">{label}</div>
+      <div className="mt-1 font-medium text-gray-900">{value}</div>
+      {hint && <div className="mt-1 text-[11px] text-gray-500">ⓘ 式/根拠（hover）</div>}
     </div>
   );
 }
@@ -690,15 +642,11 @@ function LoadingRow({ label, desc }: { label: string; desc: string }) {
 }
 
 function Spinner() {
-  return (
-    <div
-      className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"
-      aria-label="loading"
-    />
-  );
+  return <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" aria-label="loading" />;
 }
 
 function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
+  // ✅ 公式カラー：Eオレンジ / Vブルー / Λ黄緑 / Ǝパープル
   const steps = [
     { key: "E", label: "E – Origin", color: "#FF4500" },
     { key: "V", label: "V – Vision", color: "#2563EB" },
@@ -735,9 +683,7 @@ function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
               <span className="rounded-full px-2 py-1 transition-all border" style={style}>
                 {s.label}
               </span>
-              {i < steps.length - 1 && (
-                <span className={active || passed ? "text-gray-400" : "text-gray-300"}>→</span>
-              )}
+              {i < steps.length - 1 && <span className={active || passed ? "text-gray-400" : "text-gray-300"}>→</span>}
             </React.Fragment>
           );
         })}
