@@ -540,7 +540,7 @@ V: ${result.Trace.log.V}
               </div>
 
               <div className="mt-4 rounded-lg border p-4 text-sm">
-                <div className="font-semibold">決め台詞</div>
+              
                 <div className="mt-1 text-gray-700">Ǝトレースが存在する限り、このAIはブラックボックスになりません。</div>
               </div>
 
