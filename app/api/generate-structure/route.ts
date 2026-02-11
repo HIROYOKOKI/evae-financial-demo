@@ -22,18 +22,57 @@ const POLICY = {
   annualRatePct: 1.5,
   years: 35,
   ltiMax: 7,
-  otherDebtMonthlyPct: 2,
+  otherDebtMonthlyPct: 2, // 他債務の月返済を残高の2%で近似
 };
 
 type Bottleneck = "DTI" | "DOWN" | "LTI" | null;
 type BottleneckKey = Exclude<Bottleneck, null>;
 
-function pickBottleneck(dtiPct: number, downPct: number, lti: number): Bottleneck {
-  const dtiGap = dtiPct - POLICY.dtiMaxPct;              // >0 bad
-  const downGap = POLICY.downPaymentMinPct - downPct;     // >0 bad
-  const ltiGap = lti - POLICY.ltiMax;                     // >0 bad
+/** 数値変換（NaN/undefinedを0へ） */
+function fin(n: any) {
+  const v = Number(n);
+  return Number.isFinite(v) ? v : 0;
+}
 
-  // ★ ここで literal を固定（string widening を潰す）
+/** 小数1桁丸め */
+function round1(n: number) {
+  return Math.round(n * 10) / 10;
+}
+
+/** 元利均等：月返済（万円） */
+function amortPaymentMan(principalMan: number, annualRatePct: number, years: number) {
+  const P = fin(principalMan);
+  if (P <= 0) return 0;
+
+  const r = annualRatePct / 100 / 12;
+  const n = Math.max(1, Math.round(years * 12));
+
+  if (r === 0) return P / n;
+
+  const pow = Math.pow(1 + r, n);
+  return (P * r * pow) / (pow - 1);
+}
+
+/** 月返済から逆算した元本（万円） */
+function principalFromPaymentMan(paymentMan: number, annualRatePct: number, years: number) {
+  const pay = fin(paymentMan);
+  if (pay <= 0) return 0;
+
+  const r = annualRatePct / 100 / 12;
+  const n = Math.max(1, Math.round(years * 12));
+
+  if (r === 0) return pay * n;
+
+  const pow = Math.pow(1 + r, n);
+  return pay * ((pow - 1) / (r * pow));
+}
+
+/** HOLDの主要ボトルネックを決める */
+function pickBottleneck(dtiPct: number, downPct: number, lti: number): Bottleneck {
+  const dtiGap = dtiPct - POLICY.dtiMaxPct; // >0 bad
+  const downGap = POLICY.downPaymentMinPct - downPct; // >0 bad（不足）
+  const ltiGap = lti - POLICY.ltiMax; // >0 bad
+
   const candidates = [
     { k: "DTI", v: dtiGap },
     { k: "DOWN", v: downGap },
@@ -50,7 +89,7 @@ function pickBottleneck(dtiPct: number, downPct: number, lti: number): Bottlenec
   return bads[0].k;
 }
 
-
+/** 戦略プラン（Plan A/B/C） */
 function buildPlans(params: {
   incomeMan: number;
   loanMan: number;
@@ -73,11 +112,9 @@ function buildPlans(params: {
 
   const plans: Array<{ title: string; impact: string; steps: string[] }> = [];
 
-   // helper（この関数内で完結させる：スコープ問題を完全回避）
+  // helper（この関数内で完結させる：スコープ問題を完全回避）
   const r1 = (x: number) => Math.round(x * 10) / 10;
   const fmt = (n: number) => `${r1(Math.max(0, n))}万円`;
-
-
 
   // Plan A: bottleneck first
   if (bottleneck === "DOWN") {
@@ -99,7 +136,6 @@ function buildPlans(params: {
       ],
     });
   } else if (bottleneck === "LTI") {
-    // LTIは「借入/年収」なので、借入減か年収増の2択
     const reduceLoanForLTI = params.loanMan - POLICY.ltiMax * params.incomeMan;
     plans.push({
       title: "Plan A（最短）",
@@ -126,9 +162,15 @@ function buildPlans(params: {
     title: "Plan B（現実）",
     impact: "複数項目を少しずつ改善してリスクを分散",
     steps: [
-      required.reduceLoanManForDTI > 0 ? `申込金額を -${fmt(required.reduceLoanManForDTI * 0.6)}` : "申込金額の微調整（レンジで再計算）",
-      required.increaseAssetsManForDownPayment > 0 ? `自己資金を +${fmt(required.increaseAssetsManForDownPayment * 0.6)}` : "自己資金の上積み（ボーナス等）",
-      required.reduceOtherDebtMan > 0 ? `他の借入を -${fmt(required.reduceOtherDebtMan * 0.6)}` : "他債務の支払計画を見直す",
+      required.reduceLoanManForDTI > 0
+        ? `申込金額を -${fmt(required.reduceLoanManForDTI * 0.6)}`
+        : "申込金額の微調整（レンジで再計算）",
+      required.increaseAssetsManForDownPayment > 0
+        ? `自己資金を +${fmt(required.increaseAssetsManForDownPayment * 0.6)}`
+        : "自己資金の上積み（ボーナス等）",
+      required.reduceOtherDebtMan > 0
+        ? `他の借入を -${fmt(required.reduceOtherDebtMan * 0.6)}`
+        : "他債務の支払計画を見直す",
     ],
   });
 
@@ -172,7 +214,9 @@ export async function POST(req: Request) {
 
   // --- Metrics ---
   const monthlyIncomeMan = E.incomeMan > 0 ? E.incomeMan / 12 : 0;
-  const estOtherDebtPayMan = E.otherDebtMan > 0 ? E.otherDebtMan * (POLICY.otherDebtMonthlyPct / 100) : 0;
+  const estOtherDebtPayMan =
+    E.otherDebtMan > 0 ? E.otherDebtMan * (POLICY.otherDebtMonthlyPct / 100) : 0;
+
   const estMortgagePayMan = amortPaymentMan(E.loanRequestMan, POLICY.annualRatePct, POLICY.years);
 
   const dtiPct =
@@ -186,7 +230,8 @@ export async function POST(req: Request) {
   // --- Policy gates ---
   if (gateReasons.length === 0) {
     if (dtiPct > POLICY.dtiMaxPct) gateReasons.push(`DTIが上限(${POLICY.dtiMaxPct}%)を超過`);
-    if (downPaymentPct < POLICY.downPaymentMinPct) gateReasons.push(`頭金比率が最低(${POLICY.downPaymentMinPct}%)を下回る`);
+    if (downPaymentPct < POLICY.downPaymentMinPct)
+      gateReasons.push(`頭金比率が最低(${POLICY.downPaymentMinPct}%)を下回る`);
     if (lti > POLICY.ltiMax) gateReasons.push(`LTIが目安上限(${POLICY.ltiMax}倍)を超過`);
   }
 
@@ -218,12 +263,17 @@ export async function POST(req: Request) {
         reduceOtherDebtMan = needReducePay / (POLICY.otherDebtMonthlyPct / 100);
       }
     } else {
-      const principalAllowed = principalFromPaymentMan(allowMortgagePay, POLICY.annualRatePct, POLICY.years);
+      const principalAllowed = principalFromPaymentMan(
+        allowMortgagePay,
+        POLICY.annualRatePct,
+        POLICY.years
+      );
       const reduce = E.loanRequestMan - principalAllowed;
       if (reduce > 0) reduceLoanManForDTI = reduce;
     }
 
-    const requiredAssets = (POLICY.downPaymentMinPct / (100 - POLICY.downPaymentMinPct)) * E.loanRequestMan;
+    const requiredAssets =
+      (POLICY.downPaymentMinPct / (100 - POLICY.downPaymentMinPct)) * E.loanRequestMan;
     const inc = requiredAssets - E.assetsMan;
     if (inc > 0) increaseAssetsManForDownPayment = inc;
   }
@@ -236,9 +286,9 @@ export async function POST(req: Request) {
 
   // --- headroom (PASSでも見せる：境界の可視化) ---
   const headroom = {
-    dtiPct: round1(POLICY.dtiMaxPct - dtiPct), // +なら余裕、-なら超過
-    downPaymentPct: round1(downPaymentPct - POLICY.downPaymentMinPct), // +なら余裕、-なら不足
-    lti: round1(POLICY.ltiMax - lti), // +なら余裕、-なら超過
+    dtiPct: round1(POLICY.dtiMaxPct - dtiPct), // +余裕 / -超過
+    downPaymentPct: round1(downPaymentPct - POLICY.downPaymentMinPct), // +余裕 / -不足
+    lti: round1(POLICY.ltiMax - lti), // +余裕 / -超過
   };
 
   const bottleneck: Bottleneck = pickBottleneck(dtiPct, downPaymentPct, lti);
@@ -292,7 +342,7 @@ export async function POST(req: Request) {
       headroom,
       plans,
 
-      // 既存互換
+      // 既存互換（古いUIが読めるように）
       flags: [...gateReasons, ...softFlags],
       policy: {
         bank: POLICY.bank,
@@ -343,4 +393,3 @@ export async function POST(req: Request) {
     },
   });
 }
-
