@@ -119,12 +119,20 @@ export default function Home() {
     { label: "その他", value: "その他" },
   ];
 
+  // ✅ 最低1つ入力があるか（デモの「反応しない」を避ける）
+  const hasAnyInput = useMemo(() => {
+    return Object.values(form).some((v) => String(v ?? "").trim().length > 0);
+  }, [form]);
+
   const canSubmit = useMemo(() => {
-    // ✅ 生成には確認サイン2つ必須（デモ演出）
-    return !isLoading && confirmTruth && confirmNoDecision;
-  }, [isLoading, confirmTruth, confirmNoDecision]);
+    // ✅ 生成には「何か入力」＋「確認サイン2つ」必須
+    return !isLoading && hasAnyInput && confirmTruth && confirmNoDecision;
+  }, [isLoading, hasAnyInput, confirmTruth, confirmNoDecision]);
 
   async function onGenerate() {
+    // ✅ 念のためガード（disabledでも何らかで呼ばれた時に安全）
+    if (!canSubmit) return;
+
     setError(null);
     setIsLoading(true);
     setResult(null);
@@ -141,7 +149,7 @@ export default function Home() {
         otherDebtMan: form.otherDebtMan ? Number(form.otherDebtMan) : undefined,
         loanRequestMan: form.loanRequestMan ? Number(form.loanRequestMan) : undefined,
 
-        // ✅ デモ用：確認サイン情報（API側でTraceに詰めて返すとログ表示が確実に埋まる）
+        // ✅ デモ用：確認サイン情報（API側でTraceに詰めて返すと表示が確実）
         userConfirmed: true,
         confirmedAt,
         confirmText: {
@@ -176,6 +184,10 @@ export default function Home() {
   const dtiMax = result?.Lambda?.policy?.dtiMaxPct ?? 35;
   const downMin = result?.Lambda?.policy?.downPaymentMinPct ?? 10;
   const ltiMax = 7; // 今のPolicyGateと合わせる（デモ固定）
+
+  // ✅ ボタン色
+  const BTN_BASE = "#FF4500";
+  const BTN_HOVER = "#E63E00";
 
   return (
     <main className="min-h-screen bg-white">
@@ -273,55 +285,63 @@ export default function Home() {
           {/* ✅ 確認サイン（軽量） */}
           <div className="mt-6 rounded-lg border bg-gray-50 p-4">
             <div className="text-xs font-semibold text-gray-700">確認サイン（デモ）</div>
+
             <div className="mt-2 space-y-2 text-xs text-gray-700">
-              <label className="flex items-start gap-2">
+              <div className="flex items-start gap-2">
                 <input
+                  id="confirm-truth"
                   type="checkbox"
                   checked={confirmTruth}
                   onChange={(e) => setConfirmTruth(e.target.checked)}
                   className="mt-0.5"
                 />
-                入力内容が事実であることを確認しました
-              </label>
+                <label htmlFor="confirm-truth" className="cursor-pointer select-none">
+                  入力内容が事実であることを確認しました
+                </label>
+              </div>
 
-              <label className="flex items-start gap-2">
+              <div className="flex items-start gap-2">
                 <input
+                  id="confirm-nodecision"
                   type="checkbox"
                   checked={confirmNoDecision}
                   onChange={(e) => setConfirmNoDecision(e.target.checked)}
                   className="mt-0.5"
                 />
-                本デモは融資可否を決定しないことを理解しています
-              </label>
+                <label htmlFor="confirm-nodecision" className="cursor-pointer select-none">
+                  本デモは融資可否を決定しないことを理解しています
+                </label>
+              </div>
 
               <div className="pt-1 text-[11px] text-gray-500">※ 確認情報は Ǝトレース（記録）に含める想定です</div>
             </div>
           </div>
 
-          {/* ✅ 起動ボタン（Eカラー＋押した感＋ホバー） */}
+          {/* ✅ 起動ボタン（Eカラー＋押下感＋ホバー） */}
           <button
             disabled={!canSubmit}
             onClick={onGenerate}
             className="
               mt-6 w-full rounded-lg px-4 py-3 text-sm font-semibold
               transition-all duration-150 ease-out
-              disabled:opacity-50
+              disabled:opacity-50 disabled:cursor-not-allowed
               active:scale-[0.98]
             "
             style={{
-              backgroundColor: "#FF4500",
+              backgroundColor: BTN_BASE,
               color: "#ffffff",
               boxShadow: "0 4px 14px rgba(255,69,0,0.30)",
               transform: "translateY(0px)",
+              filter: isLoading ? "brightness(0.98)" : "none",
             }}
             onMouseEnter={(e) => {
               if (!canSubmit) return;
-              e.currentTarget.style.backgroundColor = "#E63E00";
+              e.currentTarget.style.backgroundColor = BTN_HOVER;
               e.currentTarget.style.boxShadow = "0 6px 18px rgba(255,69,0,0.45)";
               e.currentTarget.style.transform = "translateY(-1px)";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "#FF4500";
+              e.currentTarget.style.backgroundColor = BTN_BASE;
               e.currentTarget.style.boxShadow = "0 4px 14px rgba(255,69,0,0.30)";
               e.currentTarget.style.transform = "translateY(0px)";
             }}
@@ -329,7 +349,14 @@ export default function Home() {
             {isLoading ? "生成中…" : "判断構造を生成する →"}
           </button>
 
-          {!canSubmit ? <div className="mt-2 text-xs text-gray-500">※ 生成には上記2つの確認が必要です（デモ演出）</div> : null}
+          {/* ✅ 何が足りないか表示（デモの体験を壊さない） */}
+          {!canSubmit && (
+            <div className="mt-2 text-xs text-gray-500 space-y-1">
+              {!hasAnyInput && <div>※ まずはどれか1つ入力してください</div>}
+              {!confirmTruth && <div>※ 「入力内容が事実であること」を確認してください</div>}
+              {!confirmNoDecision && <div>※ 「可否を決定しないこと」を確認してください</div>}
+            </div>
+          )}
 
           {error && (
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
@@ -523,7 +550,6 @@ V: ${result.Trace.log.V}
 Λ: ${result.Trace.log.Lambda}
 Ǝ: ${result.Trace.log.Trace}`}</pre>
 
-                  {/* ✅ 確認サイン表示（APIが返す場合） */}
                   <div className="mt-3 border-t pt-3 text-[11px] text-gray-600">
                     <div className="font-semibold text-gray-700">User Confirmation (Demo)</div>
                     <div className="mt-1">Status: {result.Trace.confirmed ? "confirmed" : "—"}</div>
@@ -544,7 +570,6 @@ V: ${result.Trace.log.V}
           )}
         </section>
 
-        {/* Footer */}
         <footer className="py-4 text-center text-sm text-gray-600">
           このデモは、金融AIが判断をブラックボックスにしない設計が可能であることを示します。
         </footer>
@@ -620,13 +645,12 @@ function Metric({
   tone?: "neutral" | "warn" | "good";
   hint?: string;
 }) {
-  // Tailwindが効かない/ purgeされるケースでも確実に色が出るよう inline style 併用
   const styles =
     tone === "warn"
-      ? { backgroundColor: "#FFF7ED", borderColor: "#FDBA74" } // orange
+      ? { backgroundColor: "#FFF7ED", borderColor: "#FDBA74" }
       : tone === "good"
-      ? { backgroundColor: "#ECFDF5", borderColor: "#6EE7B7" } // green
-      : { backgroundColor: "#FFFFFF", borderColor: "#E5E7EB" }; // neutral
+      ? { backgroundColor: "#ECFDF5", borderColor: "#6EE7B7" }
+      : { backgroundColor: "#FFFFFF", borderColor: "#E5E7EB" };
 
   return (
     <div className="rounded-lg border p-3" style={styles} title={hint ?? ""}>
@@ -658,7 +682,7 @@ function Spinner() {
 function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
   const steps = [
     { key: "E", label: "E – Origin", color: "#FF4500" },
-    { key: "V", label: "V – Vision", color: "#2563EB" }, // ✅ 変更（くすみ回避）
+    { key: "V", label: "V – Vision", color: "#2563EB" },
     { key: "L", label: "Λ – Choice", color: "#84CC16" },
     { key: "T", label: "Ǝ – Trace", color: "#B833F5" },
   ];
