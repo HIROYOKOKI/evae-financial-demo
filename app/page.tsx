@@ -66,8 +66,6 @@ type ApiResult = {
   meta?: {
     model?: string;
     visionNote?: string;
-
-    // ✅ あれば表示できる（API側で付与してもOK）
     traceId?: string;
     generatedAt?: string;
   };
@@ -122,7 +120,7 @@ export default function Home() {
   ];
 
   const canSubmit = useMemo(() => {
-    // ✅ 「実装感」を出すため：確認サインがないと生成できない
+    // ✅ 生成には確認サイン2つ必須（デモ演出）
     return !isLoading && confirmTruth && confirmNoDecision;
   }, [isLoading, confirmTruth, confirmNoDecision]);
 
@@ -143,7 +141,7 @@ export default function Home() {
         otherDebtMan: form.otherDebtMan ? Number(form.otherDebtMan) : undefined,
         loanRequestMan: form.loanRequestMan ? Number(form.loanRequestMan) : undefined,
 
-        // ✅ デモ用：確認サイン情報（API側でTraceへ格納しても良い）
+        // ✅ デモ用：確認サイン情報（API側でTraceに詰めて返すとログ表示が確実に埋まる）
         userConfirmed: true,
         confirmedAt,
         confirmText: {
@@ -217,7 +215,6 @@ export default function Home() {
           </p>
 
           <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {/* ✅ 年齢：プルダウン */}
             <Field
               label="年齢"
               value={form.age}
@@ -226,7 +223,6 @@ export default function Home() {
               onChange={(v) => setForm({ ...form, age: v })}
             />
 
-            {/* ✅ 職業：プルダウン */}
             <Field
               label="職業（選択式）"
               value={form.job}
@@ -235,7 +231,6 @@ export default function Home() {
               onChange={(v) => setForm({ ...form, job: v })}
             />
 
-            {/* 年収：数値入力 */}
             <Field
               label="年収（万円）"
               value={form.incomeMan}
@@ -244,7 +239,6 @@ export default function Home() {
               onChange={(v) => setForm({ ...form, incomeMan: v })}
             />
 
-            {/* ✅ 家族構成：プルダウン */}
             <Field
               label="家族構成（簡易）"
               value={form.family}
@@ -304,17 +298,38 @@ export default function Home() {
             </div>
           </div>
 
+          {/* ✅ 起動ボタン（Eカラー＋押した感＋ホバー） */}
           <button
             disabled={!canSubmit}
             onClick={onGenerate}
-            className="mt-6 w-full rounded-lg border px-4 py-3 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
+            className="
+              mt-6 w-full rounded-lg px-4 py-3 text-sm font-semibold
+              transition-all duration-150 ease-out
+              disabled:opacity-50
+              active:scale-[0.98]
+            "
+            style={{
+              backgroundColor: "#FF4500",
+              color: "#ffffff",
+              boxShadow: "0 4px 14px rgba(255,69,0,0.30)",
+              transform: "translateY(0px)",
+            }}
+            onMouseEnter={(e) => {
+              if (!canSubmit) return;
+              e.currentTarget.style.backgroundColor = "#E63E00";
+              e.currentTarget.style.boxShadow = "0 6px 18px rgba(255,69,0,0.45)";
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "#FF4500";
+              e.currentTarget.style.boxShadow = "0 4px 14px rgba(255,69,0,0.30)";
+              e.currentTarget.style.transform = "translateY(0px)";
+            }}
           >
             {isLoading ? "生成中…" : "判断構造を生成する →"}
           </button>
 
-          {!confirmTruth || !confirmNoDecision ? (
-            <div className="mt-2 text-xs text-gray-500">※ 生成には上記2つの確認が必要です（デモ演出）</div>
-          ) : null}
+          {!canSubmit ? <div className="mt-2 text-xs text-gray-500">※ 生成には上記2つの確認が必要です（デモ演出）</div> : null}
 
           {error && (
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
@@ -385,23 +400,17 @@ V: 生成中…
                 <Info label="実行時の人介在" value={result.Lambda.note ?? "なし"} />
               </div>
 
-              {/* ✅ 数値サマリー */}
               {result?.Lambda?.metrics && (
                 <div className="mt-4 rounded-lg bg-gray-50 p-4 text-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="font-semibold">数値サマリー（ルール計算）</div>
-                    {result?.Lambda?.policy?.bank && (
-                      <div className="text-xs text-gray-500">{result.Lambda.policy.bank}</div>
-                    )}
+                    {result?.Lambda?.policy?.bank && <div className="text-xs text-gray-500">{result.Lambda.policy.bank}</div>}
                   </div>
 
                   <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Metric label="年収（月）" value={`${result.Lambda.metrics.monthlyIncomeMan ?? "-"} 万円`} />
                     <Metric label="住宅ローン月返済（推定）" value={`${result.Lambda.metrics.estMortgagePayMan ?? "-"} 万円`} />
-                    <Metric
-                      label="他借入月返済（推定）"
-                      value={`${result.Lambda.metrics.estOtherDebtPayMan ?? "-"} 万円`}
-                    />
+                    <Metric label="他借入月返済（推定）" value={`${result.Lambda.metrics.estOtherDebtPayMan ?? "-"} 万円`} />
 
                     <Metric
                       label="返済負担率 DTI"
@@ -449,9 +458,7 @@ V: 生成中…
                 </div>
               )}
 
-              <p className="mt-3 text-xs text-gray-500">
-                ※ ΛはLLMではなく、事前定義ルールで確定します（実行時に人は介在しません）
-              </p>
+              <p className="mt-3 text-xs text-gray-500">※ ΛはLLMではなく、事前定義ルールで確定します（実行時に人は介在しません）</p>
             </>
           )}
         </section>
@@ -482,7 +489,6 @@ V: 生成中…
                   </ul>
                 </div>
 
-                {/* ✅ 改善の目安 */}
                 {result?.Lambda?.required && (
                   <div className="mt-4 rounded-lg border p-4 text-sm">
                     <div className="font-semibold">改善の目安（概算）</div>
@@ -492,9 +498,7 @@ V: 生成中…
 
                     <ul className="mt-3 list-disc pl-5 space-y-1 text-gray-700">
                       {(result.Lambda.required.reduceLoanManForDTI ?? 0) > 0 && (
-                        <li>
-                          申込金額を約 {result.Lambda.required.reduceLoanManForDTI} 万円下げる（DTI目標に近づける）
-                        </li>
+                        <li>申込金額を約 {result.Lambda.required.reduceLoanManForDTI} 万円下げる（DTI目標に近づける）</li>
                       )}
                       {(result.Lambda.required.increaseAssetsManForDownPayment ?? 0) > 0 && (
                         <li>
@@ -502,9 +506,7 @@ V: 生成中…
                         </li>
                       )}
                       {(result.Lambda.required.reduceOtherDebtMan ?? 0) > 0 && (
-                        <li>
-                          他の借入を約 {result.Lambda.required.reduceOtherDebtMan} 万円圧縮する（比率上限に近づける）
-                        </li>
+                        <li>他の借入を約 {result.Lambda.required.reduceOtherDebtMan} 万円圧縮する（比率上限に近づける）</li>
                       )}
                       {(result.Lambda.required.reduceLoanManForDTI ?? 0) <= 0 &&
                         (result.Lambda.required.increaseAssetsManForDownPayment ?? 0) <= 0 &&
@@ -586,7 +588,7 @@ function Field({
         </select>
       ) : (
         <input
-          type={type} // ✅ number を効かせる
+          type={type}
           className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-200"
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -649,19 +651,16 @@ function LoadingRow({ label, desc }: { label: string; desc: string }) {
 
 function Spinner() {
   return (
-    <div
-      className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"
-      aria-label="loading"
-    />
+    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" aria-label="loading" />
   );
 }
 
 function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
   const steps = [
-    { key: "E", label: "E – Origin" },
-    { key: "V", label: "V – Vision" },
-    { key: "L", label: "Λ – Choice" },
-    { key: "T", label: "Ǝ – Trace" },
+    { key: "E", label: "E – Origin", color: "#FF4500" },
+    { key: "V", label: "V – Vision", color: "#2563EB" }, // ✅ 変更（くすみ回避）
+    { key: "L", label: "Λ – Choice", color: "#84CC16" },
+    { key: "T", label: "Ǝ – Trace", color: "#B833F5" },
   ];
 
   const [idx, setIdx] = React.useState(0);
@@ -669,9 +668,7 @@ function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
   React.useEffect(() => {
     if (phase !== "generating") return;
     setIdx(0);
-    const t = setInterval(() => {
-      setIdx((v) => (v + 1) % steps.length);
-    }, 500);
+    const t = setInterval(() => setIdx((v) => (v + 1) % steps.length), 500);
     return () => clearInterval(t);
   }, [phase]);
 
@@ -684,23 +681,18 @@ function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
           const active = i === activeIndex;
           const passed = i < activeIndex;
 
+          const style = active
+            ? { backgroundColor: s.color, color: "#fff", borderColor: s.color }
+            : passed
+            ? { backgroundColor: "#F3F4F6", color: "#111827", borderColor: "#E5E7EB" }
+            : { backgroundColor: "transparent", color: "#6B7280", borderColor: "transparent" };
+
           return (
             <React.Fragment key={s.key}>
-              <span
-                className={[
-                  "rounded-full px-2 py-1 transition-all",
-                  active
-                    ? "bg-gray-900 text-white"
-                    : passed
-                    ? "bg-gray-100 text-gray-800"
-                    : "bg-transparent text-gray-500",
-                ].join(" ")}
-              >
+              <span className="rounded-full px-2 py-1 transition-all border" style={style}>
                 {s.label}
               </span>
-              {i < steps.length - 1 && (
-                <span className={active || passed ? "text-gray-400" : "text-gray-300"}>→</span>
-              )}
+              {i < steps.length - 1 && <span className={active || passed ? "text-gray-400" : "text-gray-300"}>→</span>}
             </React.Fragment>
           );
         })}
