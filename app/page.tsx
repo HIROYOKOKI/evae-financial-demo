@@ -54,10 +54,22 @@ type ApiResult = {
       Lambda: string;
       Trace: string;
     };
+
+    // ✅ デモ用：確認サイン（軽量）
+    confirmed?: boolean;
+    confirmedAt?: string; // ISO
+    confirmText?: {
+      truth?: string;
+      noDecision?: string;
+    };
   };
   meta?: {
     model?: string;
     visionNote?: string;
+
+    // ✅ あれば表示できる（API側で付与してもOK）
+    traceId?: string;
+    generatedAt?: string;
   };
 };
 
@@ -76,6 +88,10 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ApiResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // ✅ 確認サイン（軽量）
+  const [confirmTruth, setConfirmTruth] = useState(false);
+  const [confirmNoDecision, setConfirmNoDecision] = useState(false);
 
   // --- dropdown options ---
   const ageOptions = Array.from({ length: 51 }, (_, i) => {
@@ -106,8 +122,9 @@ export default function Home() {
   ];
 
   const canSubmit = useMemo(() => {
-    return !isLoading;
-  }, [isLoading]);
+    // ✅ 「実装感」を出すため：確認サインがないと生成できない
+    return !isLoading && confirmTruth && confirmNoDecision;
+  }, [isLoading, confirmTruth, confirmNoDecision]);
 
   async function onGenerate() {
     setError(null);
@@ -115,6 +132,8 @@ export default function Home() {
     setResult(null);
 
     try {
+      const confirmedAt = new Date().toISOString();
+
       const payload = {
         age: form.age ? Number(form.age) : undefined,
         job: form.job || undefined,
@@ -123,6 +142,14 @@ export default function Home() {
         assetsMan: form.assetsMan ? Number(form.assetsMan) : undefined,
         otherDebtMan: form.otherDebtMan ? Number(form.otherDebtMan) : undefined,
         loanRequestMan: form.loanRequestMan ? Number(form.loanRequestMan) : undefined,
+
+        // ✅ デモ用：確認サイン情報（API側でTraceへ格納しても良い）
+        userConfirmed: true,
+        confirmedAt,
+        confirmText: {
+          truth: "入力内容が事実であることを確認しました",
+          noDecision: "本デモは融資可否を決定しないことを理解しています",
+        },
       };
 
       const res = await fetch("/api/generate-structure", {
@@ -249,6 +276,34 @@ export default function Home() {
             />
           </div>
 
+          {/* ✅ 確認サイン（軽量） */}
+          <div className="mt-6 rounded-lg border bg-gray-50 p-4">
+            <div className="text-xs font-semibold text-gray-700">確認サイン（デモ）</div>
+            <div className="mt-2 space-y-2 text-xs text-gray-700">
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={confirmTruth}
+                  onChange={(e) => setConfirmTruth(e.target.checked)}
+                  className="mt-0.5"
+                />
+                入力内容が事実であることを確認しました
+              </label>
+
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={confirmNoDecision}
+                  onChange={(e) => setConfirmNoDecision(e.target.checked)}
+                  className="mt-0.5"
+                />
+                本デモは融資可否を決定しないことを理解しています
+              </label>
+
+              <div className="pt-1 text-[11px] text-gray-500">※ 確認情報は Ǝトレース（記録）に含める想定です</div>
+            </div>
+          </div>
+
           <button
             disabled={!canSubmit}
             onClick={onGenerate}
@@ -256,6 +311,10 @@ export default function Home() {
           >
             {isLoading ? "生成中…" : "判断構造を生成する →"}
           </button>
+
+          {!confirmTruth || !confirmNoDecision ? (
+            <div className="mt-2 text-xs text-gray-500">※ 生成には上記2つの確認が必要です（デモ演出）</div>
+          ) : null}
 
           {error && (
             <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
@@ -338,9 +397,7 @@ V: 生成中…
 
                   <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Metric label="年収（月）" value={`${result.Lambda.metrics.monthlyIncomeMan ?? "-"} 万円`} />
-
                     <Metric label="住宅ローン月返済（推定）" value={`${result.Lambda.metrics.estMortgagePayMan ?? "-"} 万円`} />
-
                     <Metric
                       label="他借入月返済（推定）"
                       value={`${result.Lambda.metrics.estOtherDebtPayMan ?? "-"} 万円`}
@@ -463,6 +520,15 @@ V: 生成中…
 V: ${result.Trace.log.V}
 Λ: ${result.Trace.log.Lambda}
 Ǝ: ${result.Trace.log.Trace}`}</pre>
+
+                  {/* ✅ 確認サイン表示（APIが返す場合） */}
+                  <div className="mt-3 border-t pt-3 text-[11px] text-gray-600">
+                    <div className="font-semibold text-gray-700">User Confirmation (Demo)</div>
+                    <div className="mt-1">Status: {result.Trace.confirmed ? "confirmed" : "—"}</div>
+                    <div>Confirmed At: {result.Trace.confirmedAt ?? "—"}</div>
+                    {result.meta?.traceId && <div>Trace ID: {result.meta.traceId}</div>}
+                    {result.meta?.generatedAt && <div>Generated At: {result.meta.generatedAt}</div>}
+                  </div>
                 </div>
               </div>
 
@@ -520,6 +586,7 @@ function Field({
         </select>
       ) : (
         <input
+          type={type} // ✅ number を効かせる
           className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-200"
           value={value}
           onChange={(e) => onChange(e.target.value)}
