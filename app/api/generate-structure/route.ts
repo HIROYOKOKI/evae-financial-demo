@@ -29,18 +29,23 @@ type Bottleneck = "DTI" | "DOWN" | "LTI" | null;
 type BottleneckKey = Exclude<Bottleneck, null>;
 
 function pickBottleneck(dtiPct: number, downPct: number, lti: number): Bottleneck {
-  // gap: 0以上なら「超過/不足」、0未満なら「余裕」
-  const dtiGap = dtiPct - POLICY.dtiMaxPct; // >0 bad
-  const downGap = POLICY.downPaymentMinPct - downPct; // >0 bad
-  const ltiGap = lti - POLICY.ltiMax; // >0 bad
+  const dtiGap = dtiPct - POLICY.dtiMaxPct;              // >0 bad
+  const downGap = POLICY.downPaymentMinPct - downPct;     // >0 bad
+  const ltiGap = lti - POLICY.ltiMax;                     // >0 bad
 
-  const bads: { k: BottleneckKey; v: number }[] = [
+  // ★ ここで literal を固定（string widening を潰す）
+  const candidates = [
     { k: "DTI", v: dtiGap },
     { k: "DOWN", v: downGap },
     { k: "LTI", v: ltiGap },
-  ].filter((x) => x.v > 0);
+  ] as const;
+
+  const bads: { k: BottleneckKey; v: number }[] = candidates
+    .map((x) => ({ k: x.k as BottleneckKey, v: x.v }))
+    .filter((x) => x.v > 0);
 
   if (bads.length === 0) return null;
+
   bads.sort((a, b) => b.v - a.v);
   return bads[0].k;
 }
