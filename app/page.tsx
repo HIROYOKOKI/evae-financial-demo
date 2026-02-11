@@ -327,7 +327,7 @@ export default function Home() {
               e.currentTarget.style.transform = "translateY(0px)";
             }}
           >
-            {isLoading ? "生成中…" : "判断構造を生成する →"}
+            {isLoading ? "生成中…" : "検討プロセスを表示する →"}
           </button>
 
           {!canSubmit ? (
@@ -372,7 +372,7 @@ V: 生成中…
           </div>
 
           {!result ? (
-            <p className="mt-3 text-sm text-gray-600">「判断構造を生成する」を押すと、ここにAI生成の論点が表示されます。</p>
+            <p className="mt-3 text-sm text-gray-600">「検討プロセスを表示する」を押すと、ここにAI生成の論点が表示されます。</p>
           ) : (
             <>
               <ul className="mt-3 space-y-2 text-sm text-gray-700 list-disc pl-5">
@@ -627,9 +627,9 @@ function Metric({
   // Tailwind purge対策：色は inline style
   const styles =
     tone === "warn"
-      ? { backgroundColor: "#FFF7ED", borderColor: "#FDBA74" } // orange
+      ? { backgroundColor: "#FF4500", borderColor: "#FDBA74" } // orange
       : tone === "good"
-      ? { backgroundColor: "#ECFDF5", borderColor: "#6EE7B7" } // green
+      ? { backgroundColor: "#2563EB", borderColor: "#6EE7B7" } // green
       : { backgroundColor: "#FFFFFF", borderColor: "#E5E7EB" }; // neutral
 
   return (
