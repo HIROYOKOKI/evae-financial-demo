@@ -648,37 +648,34 @@ function Metric({
   hint?: string;
 }) {
   const styles =
-  tone === "warn"
-    ? {
-        backgroundColor: "#F97316",
-        borderColor: "#EA580C",
-        boxShadow: "0 6px 16px rgba(249,115,22,0.35)",
-        color: "#FFFFFF",
-      }
-    : tone === "good"
-    ? {
-        backgroundColor: "#2563EB",
-        borderColor: "#1D4ED8",
-        boxShadow: "0 6px 16px rgba(37,99,235,0.35)",
-        color: "#FFFFFF",
-      }
-    : {
-        backgroundColor: "#FFFFFF",
-        borderColor: "#E5E7EB",
-      };
+    tone === "warn"
+      ? {
+          backgroundColor: "#F97316",
+          borderColor: "#EA580C",
+          boxShadow: "0 6px 16px rgba(249,115,22,0.35)",
+          color: "#FFFFFF",
+        }
+      : tone === "good"
+      ? {
+          backgroundColor: "#2563EB",
+          borderColor: "#1D4ED8",
+          boxShadow: "0 6px 16px rgba(37,99,235,0.35)",
+          color: "#FFFFFF",
+        }
+      : {
+          backgroundColor: "#FFFFFF",
+          borderColor: "#E5E7EB",
+          color: "#111827",
+        };
 
-return (
-  <div
-    className="rounded-lg border-2 p-3 transition-all duration-150"
-    style={styles}
-    title={hint ?? ""}
-  >
-    <div className="text-xs font-semibold opacity-90">{label}</div>
-    <div className="mt-1 font-semibold text-base">{value}</div>
-    {hint && <div className="mt-1 text-[11px] opacity-80">ⓘ 式/根拠（hover）</div>}
-  </div>
-);
-
+  return (
+    <div className="rounded-lg border-2 p-3 transition-all duration-150" style={styles} title={hint ?? ""}>
+      <div className="text-xs font-semibold opacity-90">{label}</div>
+      <div className="mt-1 font-semibold text-base">{value}</div>
+      {hint && <div className="mt-1 text-[11px] opacity-80">ⓘ 式/根拠（hover）</div>}
+    </div>
+  );
+}
 
 function LoadingRow({ label, desc }: { label: string; desc: string }) {
   return (
@@ -694,7 +691,10 @@ function LoadingRow({ label, desc }: { label: string; desc: string }) {
 
 function Spinner() {
   return (
-    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" aria-label="loading" />
+    <div
+      className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900"
+      aria-label="loading"
+    />
   );
 }
 
@@ -735,7 +735,9 @@ function FlowStepper({ phase }: { phase: "idle" | "generating" | "done" }) {
               <span className="rounded-full px-2 py-1 transition-all border" style={style}>
                 {s.label}
               </span>
-              {i < steps.length - 1 && <span className={active || passed ? "text-gray-400" : "text-gray-300"}>→</span>}
+              {i < steps.length - 1 && (
+                <span className={active || passed ? "text-gray-400" : "text-gray-300"}>→</span>
+              )}
             </React.Fragment>
           );
         })}
