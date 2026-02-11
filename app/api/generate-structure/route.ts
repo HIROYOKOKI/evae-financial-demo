@@ -73,8 +73,10 @@ function buildPlans(params: {
 
   const plans: Array<{ title: string; impact: string; steps: string[] }> = [];
 
-  // helper
-const fmt = (n: number) => `${round1(Math.max(0, n))}万円`;
+   // helper（この関数内で完結させる：スコープ問題を完全回避）
+  const r1 = (x: number) => Math.round(x * 10) / 10;
+  const fmt = (n: number) => `${r1(Math.max(0, n))}万円`;
+
 
 
   // Plan A: bottleneck first
