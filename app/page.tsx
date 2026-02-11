@@ -769,35 +769,52 @@ function Metric({
   hint?: string;
 }) {
   const styles =
-    tone === "warn"
-      ? {
-          backgroundColor: "rgba(255,21,0,0.12)",
-borderColor: "rgba(255,21,0,0.35)",
-color: "#7A1E12",
+  tone === "warn"
+    ? {
+        backgroundColor: "#FF1500",   // 強いEカラー
+        borderColor: "#FF1500",
+        color: "#FFFFFF",
+      }
+    : tone === "good"
+    ? {
+        backgroundColor: "#0968FF",   // 強いVカラー寄りのブルー
+        borderColor: "#0968FF",
+        color: "#FFFFFF",
+      }
+    : {
+        backgroundColor: "#FFFFFF",
+        borderColor: "#E5E7EB",
+        color: "#111827",
+      };
 
-        }
-      : tone === "good"
-      ? {
-          backgroundColor: "rgba(9,104,255,0.12)",
-borderColor: "rgba(9,104,255,0.35)",
-color: "#0B3C8A",
-
-        }
-      : {
-          backgroundColor: "#FFFFFF",
-          borderColor: "#E5E7EB",
-          color: "#111827",
-        };
 
   return (
-    <div className="rounded-lg border p-3" style={styles} title={hint ?? ""}>
-      <div className="text-xs font-semibold text-gray-600">{label}</div>
-      <div className="mt-1 font-medium" style={{ color: styles.color }}>
-        {value}
-      </div>
-      {hint && <div className="mt-1 text-[11px] text-gray-500">ⓘ 式/根拠（hover）</div>}
+  <div className="rounded-lg border p-3" style={styles} title={hint ?? ""}>
+    <div
+      className="text-xs font-semibold"
+      style={{ color: styles.color }}
+    >
+      {label}
     </div>
-  );
+
+    <div
+      className="mt-1 font-bold text-base"
+      style={{ color: styles.color }}
+    >
+      {value}
+    </div>
+
+    {hint && (
+      <div
+        className="mt-1 text-[11px]"
+        style={{ color: styles.color }}
+      >
+        ⓘ 式/根拠（hover）
+      </div>
+    )}
+  </div>
+);
+
 }
 
 function LoadingRow({ label, desc }: { label: string; desc: string }) {
