@@ -771,15 +771,17 @@ function Metric({
   const styles =
     tone === "warn"
       ? {
-          backgroundColor: "rgba(255,69,0,0.10)",
-          borderColor: "rgba(255,69,0,0.35)",
-          color: "#111827",
+          backgroundColor: "rgba(255,21,0,0.12)",
+borderColor: "rgba(255,21,0,0.35)",
+color: "#7A1E12",
+
         }
       : tone === "good"
       ? {
-          backgroundColor: "rgba(37,99,235,0.10)",
-          borderColor: "rgba(37,99,235,0.35)",
-          color: "#111827",
+          backgroundColor: "rgba(9,104,255,0.12)",
+borderColor: "rgba(9,104,255,0.35)",
+color: "#0B3C8A",
+
         }
       : {
           backgroundColor: "#FFFFFF",
