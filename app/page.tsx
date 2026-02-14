@@ -1100,7 +1100,9 @@ V: ${result.Trace.log.V}
                 Λa — Officer Commit
               </div>
               <div className="mt-1 text-xs text-gray-500">
-                コミット：実行確定 / 保留 / 拒否
+                コミット：承認（Approve） / 差戻し（Review）
+ / （Stop / Emergency）
+
               </div>
 
               <div className="mt-4 flex flex-wrap gap-3">
@@ -1214,10 +1216,10 @@ V: ${result.Trace.log.V}
       officerId: "officer_demo",
       action:
         actionPath === "LEARNING_A"
-          ? "実行確定"
+          ? "承認（Approve）"
           : actionPath === "LEARNING_B"
-          ? "保留"
-          : "拒否",
+          ? "差戻し（Review）"
+          : "停止（Stop / Emergency）",
       note: commitNote || "",
       committedAt: new Date().toISOString(),
       linkedTraceId: result?.meta?.traceId ?? "—",
