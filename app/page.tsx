@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type FormState = {
   age: string;
@@ -191,6 +191,15 @@ export default function Home() {
   // ✅ Stepper連動（スクロール同期）
   const [activeStep, setActiveStep] = useState<StepKey>("E");
 
+  // --- Action Loop (presentation-friendly) ---
+  const consciousRef = useRef<HTMLDivElement | null>(null);
+  const actionRef = useRef<HTMLDivElement | null>(null);
+
+  const [showAction, setShowAction] = useState(false);
+  type ActionPath = "EMERGENCY" | "LEARNING_A" | "LEARNING_B" | null;
+  const [actionPath, setActionPath] = useState<ActionPath>(null);
+  const [commitNote, setCommitNote] = useState("");
+
   const [visible, setVisible] = useState<VisMap>({
     "section-e": true,
     "section-v": false,
@@ -316,6 +325,11 @@ export default function Home() {
     setIsLoading(true);
     setResult(null);
 
+    // Action Loop reset (presentation-friendly)
+    setShowAction(false);
+    setActionPath(null);
+    setCommitNote("");
+
     try {
       const confirmedAt = new Date().toISOString();
 
@@ -407,6 +421,28 @@ export default function Home() {
   const isHold = decision === "HOLD";
   const isPass = decision === "PASS";
 
+  // PASS/HOLD → 日本語マッピング（語彙統一）
+  type RecommendationJP = "適合" | "保留" | "不適合";
+  const recommendationJP: RecommendationJP = !result
+    ? "保留"
+    : result.Lambda.result === "PASS"
+    ? "適合"
+    : result.Lambda.result === "HOLD"
+    ? "保留"
+    : "不適合";
+
+  const scrollToAction = () => {
+    setShowAction(true);
+    setTimeout(
+      () => actionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      50
+    );
+  };
+
+  const scrollToConscious = () => {
+    consciousRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <main className="min-h-screen" style={{ backgroundColor: "#FFFFFF" }}>
       {/* Header (sticky) */}
@@ -432,7 +468,7 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-4xl px-6 py-10 space-y-10">
+      <div ref={consciousRef} className="mx-auto max-w-4xl px-6 py-10 space-y-10">
         {/* Context */}
         <section className="rounded-xl border p-6">
           <h2 className="text-lg font-semibold">Context｜仮想銀行A（Demo）</h2>
@@ -983,6 +1019,226 @@ V: ${result.Trace.log.V}
           </div>
         </LayerSection>
 
+        {/* Continue to Action Loop (Presentation-friendly) */}
+        <div className="pt-2">
+          <button
+            onClick={scrollToAction}
+            disabled={!result} // 生成後にだけ進める（プレゼンも安全）
+            className="w-full rounded-xl border px-4 py-3 text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+            style={{
+              backgroundColor: "#FFFFFF",
+              borderColor: "rgba(0,0,0,0.10)",
+              color: "rgba(0,0,0,0.80)",
+            }}
+          >
+            Continue to Action Loop →
+          </button>
+
+          <div className="mt-2 text-xs text-gray-500">
+            ※ 本来は自動遷移可能ですが、プレゼンのため手動で進みます
+          </div>
+        </div>
+
+        {/* Action Loop (same page, scroll) */}
+        {showAction && (
+          <div ref={actionRef} className="space-y-6 pt-10">
+            {/* Header for Action Loop */}
+            <section className="rounded-xl border p-6 bg-white">
+              <div className="text-xs text-gray-500">Action Loop</div>
+              <div className="text-lg font-semibold">Ea → Λa → Ǝa → Va</div>
+              <div className="mt-2 text-sm text-gray-600">
+                ※ ここで担当者が「現実への拘束（コミット）」を確定します
+              </div>
+
+              <button
+                onClick={scrollToConscious}
+                className="mt-4 text-sm text-gray-600 hover:text-gray-900"
+              >
+                ← Back to Conscious Loop
+              </button>
+            </section>
+
+            {/* Ǝc (read-only recap) */}
+            <section className="rounded-xl border p-6 bg-white">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold text-gray-700">
+                  Ǝc — Trace（read-only）
+                </div>
+                <div className="text-xs text-gray-500">Recommendation</div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-sm text-gray-600">推奨：</span>
+                <span className="rounded-full border px-3 py-1 text-xs font-semibold">
+                  {recommendationJP}
+                </span>
+                <span className="text-xs text-gray-400">
+                  ※ここではまだ実行は確定していません
+                </span>
+              </div>
+
+              <div className="mt-3 text-sm text-gray-700">
+                {result?.Trace?.reason ?? "—"}
+              </div>
+
+              {result?.Trace?.actions?.length ? (
+                <ul className="mt-3 list-disc pl-5 text-sm text-gray-700 space-y-1">
+                  {result.Trace.actions.slice(0, 3).map((a, i) => (
+                    <li key={i}>{a}</li>
+                  ))}
+                </ul>
+              ) : null}
+
+              <div className="mt-3 text-xs text-gray-500">
+                Trace ID: {result?.meta?.traceId ?? "—"}
+              </div>
+            </section>
+
+            {/* Λa — Officer Commit */}
+            <section className="rounded-xl border p-6 bg-white">
+              <div className="text-sm font-semibold text-gray-700">
+                Λa — Officer Commit
+              </div>
+              <div className="mt-1 text-xs text-gray-500">
+                コミット：実行確定 / 保留 / 拒否
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                {/* 実行確定 → 学習A（青） */}
+                <button
+                  onClick={() => setActionPath("LEARNING_A")}
+                  className="rounded-xl px-4 py-2 text-sm font-semibold"
+                  style={{ backgroundColor: "rgba(9,104,255,0.10)", color: "#1E3A8A" }}
+                >
+                  実行確定
+                </button>
+
+                {/* 保留 → 学習B（紫） */}
+                <button
+                  onClick={() => setActionPath("LEARNING_B")}
+                  className="rounded-xl px-4 py-2 text-sm font-semibold"
+                  style={{
+                    backgroundColor: "rgba(184,51,245,0.10)",
+                    color: "#B833F5",
+                  }}
+                >
+                  保留
+                </button>
+
+                {/* 拒否 → 緊急（赤） */}
+                <button
+                  onClick={() => setActionPath("EMERGENCY")}
+                  className="rounded-xl px-4 py-2 text-sm font-semibold"
+                  style={{ backgroundColor: "rgba(255,21,0,0.10)", color: "#DC2626" }}
+                >
+                  拒否
+                </button>
+              </div>
+
+              <div className="mt-4">
+                <label className="block text-xs text-gray-500">Commit note（任意）</label>
+                <input
+                  value={commitNote}
+                  onChange={(e) => setCommitNote(e.target.value)}
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-200"
+                  placeholder="e.g., Approved under policy / Under review / Policy violation"
+                />
+              </div>
+            </section>
+
+            {/* 押した後だけ：経路カードを1枚表示 */}
+            {actionPath && (
+              <section className="rounded-xl border p-6 bg-white">
+                {actionPath === "EMERGENCY" && (
+                  <div
+                    className="rounded-xl p-4"
+                    style={{ backgroundColor: "rgba(255,21,0,0.08)" }}
+                  >
+                    <div className="text-sm font-semibold" style={{ color: "#DC2626" }}>
+                      Emergency Path Activated
+                    </div>
+                    <div className="mt-1 text-xs text-gray-600">緊急経路（安全遮断）</div>
+                    <ul className="mt-3 list-disc pl-5 text-sm text-gray-700 space-y-1">
+                      <li>重大逸脱・権限外・不可逆リスク超過を検知</li>
+                      <li>即時停止（拒否確定）</li>
+                      <li>意識ループ（Ec）へフィードバック</li>
+                    </ul>
+                  </div>
+                )}
+
+                {actionPath === "LEARNING_A" && (
+                  <div
+                    className="rounded-xl p-4"
+                    style={{ backgroundColor: "rgba(9,104,255,0.08)" }}
+                  >
+                    <div className="text-sm font-semibold" style={{ color: "#1E3A8A" }}>
+                      Learning Path A Activated
+                    </div>
+                    <div className="mt-1 text-xs text-gray-600">学習A（成功強化）</div>
+                    <ul className="mt-3 list-disc pl-5 text-sm text-gray-700 space-y-1">
+                      <li>成功条件（余裕・成立要因）を固定</li>
+                      <li>次回判断を迅速化（Ec'へフィードバック）</li>
+                      <li>将来候補（Va）を生成して強化</li>
+                    </ul>
+                  </div>
+                )}
+
+                {actionPath === "LEARNING_B" && (
+                  <div
+                    className="rounded-xl p-4"
+                    style={{ backgroundColor: "rgba(184,51,245,0.08)" }}
+                  >
+                    <div className="text-sm font-semibold" style={{ color: "#B833F5" }}>
+                      Learning Path B Activated
+                    </div>
+                    <div className="mt-1 text-xs text-gray-600">学習B（前提再設計）</div>
+                    <ul className="mt-3 list-disc pl-5 text-sm text-gray-700 space-y-1">
+                      <li>条件不足・構造誤差を固定</li>
+                      <li>代替案（Va）を生成</li>
+                      <li>候補空間を更新（Vc'へ統合）</li>
+                    </ul>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Ǝa — Commit Trace（簡易） */}
+            {actionPath && (
+              <section className="rounded-xl border p-6 bg-white">
+                <div className="text-sm font-semibold text-gray-700">Ǝa — Commit Trace</div>
+
+                <pre className="mt-3 rounded-lg bg-gray-50 p-4 text-xs text-gray-800 overflow-x-auto whitespace-pre-wrap">
+{JSON.stringify(
+  {
+    commit: {
+      officerId: "officer_demo",
+      action:
+        actionPath === "LEARNING_A"
+          ? "実行確定"
+          : actionPath === "LEARNING_B"
+          ? "保留"
+          : "拒否",
+      note: commitNote || "",
+      committedAt: new Date().toISOString(),
+      linkedTraceId: result?.meta?.traceId ?? "—",
+    },
+    // Vaは最小表現：将来候補の方向だけを示す
+    Va:
+      actionPath === "LEARNING_A"
+        ? "Ec'へ（成功条件の強化）"
+        : actionPath === "LEARNING_B"
+        ? "Vc'へ（前提修正・候補統合）"
+        : "Ecへ（緊急停止・再入力）",
+  },
+  null,
+  2
+)}
+                </pre>
+              </section>
+            )}
+          </div>
+        )}
+
         <footer className="py-4 text-center text-sm text-gray-600">
           このデモは、金融AIが判断をブラックボックスにしない設計が可能であることを示します。
         </footer>
@@ -1132,9 +1388,7 @@ function HeadroomBar({
         />
       </div>
 
-      <div className="mt-1 text-[11px] text-gray-500">
-        {ok ? "余裕" : "不足/超過"}
-      </div>
+      <div className="mt-1 text-[11px] text-gray-500">{ok ? "余裕" : "不足/超過"}</div>
     </div>
   );
 }
@@ -1172,10 +1426,10 @@ function FlowStepper({
   decision: "HOLD" | "PASS" | null;
 }) {
   const steps: { key: StepKey; label: string; color: string }[] = [
-    { key: "E", label: "E – Origin", color: "#FF4500" },
-    { key: "V", label: "V – Vision", color: "#2563EB" },
-    { key: "L", label: "Λ – Choice", color: "#84CC16" },
-    { key: "T", label: "Ǝ – Trace", color: "#B833F5" },
+    { key: "E", label: "Ec – Origin", color: "#FF4500" },
+    { key: "V", label: "Vc – Vision", color: "#1E3A8A" },
+    { key: "L", label: "Λc – Choice", color: "#84CC16" },
+    { key: "T", label: "Ǝc – Trace", color: "#B833F5" },
   ];
 
   const [idx, setIdx] = useState(0);
